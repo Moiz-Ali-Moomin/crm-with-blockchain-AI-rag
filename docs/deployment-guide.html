@@ -1217,7 +1217,29 @@ CREATE INDEX IF NOT EXISTS "ai_embeddings_embedding_idx" ...</pre>
       </div>
 
       <div class="callout" style="background:var(--red-bg); border:1px solid rgba(248,81,73,.28); color:#ff7b72; margin-bottom:20px">
-        <strong>#3 — Wrong backend start script name</strong><br/><br/>
+        <strong>#3 — MongoDB missing from dev docker-compose</strong><br/><br/>
+        <strong>Error:</strong><br/>
+        <code style="display:block; background:rgba(0,0,0,.3); padding:10px; border-radius:6px; margin:8px 0; font-size:13px">MongooseServerSelectionError: connect ECONNREFUSED 127.0.0.1:27017</code>
+        <strong>Cause:</strong> The backend's MongooseModule tries to connect on startup and crashes after 9 retries. MongoDB was not in the dev <code>docker-compose.yml</code>.<br/><br/>
+        <strong>Fix:</strong> MongoDB is now in <code>docker-compose.yml</code>. Always start infra before the app:
+        <div class="code-block" style="margin-top:10px">
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+          <pre>docker compose up -d
+# wait for healthy, then start the app</pre>
+        </div>
+      </div>
+
+      <div class="callout" style="background:var(--yellow-bg); border:1px solid rgba(210,153,34,.28); color:#e3b951; margin-bottom:20px">
+        <strong>#4 — Health check URL has /api/v1 prefix</strong><br/><br/>
+        The correct health endpoint is <code>/api/v1/health</code> — not <code>/health</code>. The app uses a global API prefix.
+        <div class="code-block" style="margin-top:10px">
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+          <pre>curl http://localhost:3001/api/v1/health</pre>
+        </div>
+      </div>
+
+      <div class="callout" style="background:var(--red-bg); border:1px solid rgba(248,81,73,.28); color:#ff7b72; margin-bottom:20px">
+        <strong>#5 — Wrong backend start script name</strong><br/><br/>
         <strong>Error:</strong><br/>
         <code style="display:block; background:rgba(0,0,0,.3); padding:10px; border-radius:6px; margin:8px 0; font-size:13px">npm error Missing script: "start:prod"</code>
         <strong>Cause:</strong> <code>crm-backend/package.json</code> has no <code>start:prod</code> script. The correct production script is <code>npm start</code> → <code>node dist/main</code>. Also triggered by running the command from the wrong directory (<code>crm-frontend/</code> instead of <code>crm-backend/</code>).<br/><br/>
@@ -1231,7 +1253,7 @@ nohup npm start > /tmp/crm-api.log 2>&1 &</pre>
       </div>
 
       <div class="callout" style="background:var(--red-bg); border:1px solid rgba(248,81,73,.28); color:#ff7b72; margin-bottom:20px">
-        <strong>#4 — Frontend starts with no .next build directory</strong><br/><br/>
+        <strong>#6 — Frontend starts with no .next build directory</strong><br/><br/>
         <strong>Error:</strong><br/>
         <code style="display:block; background:rgba(0,0,0,.3); padding:10px; border-radius:6px; margin:8px 0; font-size:13px">Error: Could not find a production build in the '.next' directory.</code>
         <strong>Cause:</strong> Running <code>npm run build &amp;&amp; nohup npm start &amp;</code> as a single backgrounded command causes the build to receive <code>SIGTSTP</code> and stop mid-way. <code>npm start</code> then runs against a missing or incomplete <code>.next</code> directory.<br/><br/>
@@ -1241,6 +1263,31 @@ nohup npm start > /tmp/crm-api.log 2>&1 &</pre>
           <pre>cd /opt/nexus-crm/crm-frontend
 npm run build                                  # foreground — wait for it to finish
 nohup npm start > /tmp/crm-web.log 2>&1 &     # background only the server</pre>
+        </div>
+      </div>
+      <div class="callout" style="background:var(--red-bg); border:1px solid rgba(248,81,73,.28); color:#ff7b72; margin-bottom:20px">
+        <strong>#7 — Port 3000 already in use on restart (EADDRINUSE)</strong><br/><br/>
+        <strong>Error:</strong><br/>
+        <code style="display:block; background:rgba(0,0,0,.3); padding:10px; border-radius:6px; margin:8px 0; font-size:13px">Error: listen EADDRINUSE: address already in use :::3000</code>
+        <strong>Cause:</strong> A previous <code>npm start</code> process is still running in the background. Kill it before restarting:
+        <div class="code-block" style="margin-top:10px">
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+          <pre>kill $(fuser 3000/tcp 2>/dev/null)
+nohup npm start > /tmp/crm-web.log 2>&1 &</pre>
+        </div>
+      </div>
+
+      <div class="callout" style="background:var(--red-bg); border:1px solid rgba(248,81,73,.28); color:#ff7b72; margin-bottom:20px">
+        <strong>#8 — Dashboard 400 errors on JS chunks after env change</strong><br/><br/>
+        <strong>Error:</strong><br/>
+        <code style="display:block; background:rgba(0,0,0,.3); padding:10px; border-radius:6px; margin:8px 0; font-size:13px">Failed to load resource: 400 (Bad Request) _next/static/chunks/…js
+ChunkLoadError: Loading chunk failed.</code>
+        <strong>Cause:</strong> <code>NEXT_PUBLIC_*</code> variables are baked into the bundle at build time. After changing <code>.env.local</code> the app must be rebuilt — starting without rebuilding serves mismatched chunks.<br/><br/>
+        <strong>Fix:</strong> Always rebuild after any <code>.env.local</code> change:
+        <div class="code-block" style="margin-top:10px">
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+          <pre>npm run build
+nohup npm start > /tmp/crm-web.log 2>&1 &</pre>
         </div>
       </div>
     </section>

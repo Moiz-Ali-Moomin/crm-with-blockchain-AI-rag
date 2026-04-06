@@ -4,15 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, useInView } from 'framer-motion';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { LucideIcon } from 'lucide-react';
-
 export interface StatCardProps {
   title: string;
   value: string | number;
   /** Display value for the animated number (numeric string like "12,450" or "$4.2k") */
   displayValue?: string;
   sub?: string;
-  icon: LucideIcon;
+  icon: React.ReactNode;
   /** Framer stagger index — delay = index * 0.08s */
   index?: number;
   trend?: {
@@ -82,7 +80,7 @@ export function StatCard({
   value,
   displayValue,
   sub,
-  icon: Icon,
+  icon,
   index = 0,
   trend,
   gradient,
@@ -136,7 +134,7 @@ export function StatCard({
             {title}
           </p>
           <div className={cn('p-2.5 rounded-xl', iconBgClass)}>
-            <Icon size={16} strokeWidth={2} />
+            {icon}
           </div>
         </div>
 

@@ -686,7 +686,7 @@
     </a>
     <a class="sidebar-link" onclick="navigateTo('day10')">
       <span class="day-badge">Day 10</span> Deployment
-      <span class="issue-count">2</span>
+      <span class="issue-count">8</span>
     </a>
   </div>
 
@@ -4009,11 +4009,183 @@ https://nextjs.org/docs/messages/production-start-no-build-id]</div>
       </div>
     </div>
 
+    <!-- Issue #38 -->
+    <div class="issue-card open" id="issue-38">
+      <div class="issue-header" onclick="toggle(this)">
+        <span class="issue-num">#038</span>
+        <div class="issue-header-content">
+          <div class="issue-title">Backend Crashes on Start — MongoDB Not in Dev Docker Compose</div>
+          <div class="issue-tags">
+            <span class="tag tag-infra">docker</span>
+            <span class="tag tag-infra">mongodb</span>
+            <span class="tag tag-infra">deployment</span>
+          </div>
+        </div>
+        <span class="status-badge status-fixed">Fixed</span>
+        <span class="chevron">▶</span>
+      </div>
+      <div class="issue-body">
+        <div class="section-block">
+          <div class="section-label error">🚨 Error</div>
+          <div class="error-log">MongooseServerSelectionError: connect ECONNREFUSED ::1:27017, connect ECONNREFUSED 127.0.0.1:27017
+[MongooseModule] Unable to connect to the database. Retrying (9)...
+[ExceptionHandler] connect ECONNREFUSED ::1:27017</div>
+        </div>
+        <div class="section-block">
+          <div class="section-label cause">⚠️ Root Cause</div>
+          <div class="cause-box">
+            <div class="prose">
+              The dev <code>docker-compose.yml</code> only had PostgreSQL and Redis. The backend's <code>MongooseModule</code> tries to connect to <code>MONGO_URI</code> on startup and throws a fatal error after 9 retries when it can't reach MongoDB. The <code>MONGO_URI</code> was set to <code>mongodb://localhost:27017/crm_logs</code> but no MongoDB container was running.
+            </div>
+          </div>
+        </div>
+        <div class="section-block">
+          <div class="section-label fix">🛠 Fix</div>
+          <div class="prose">Added <code>mongo:7-jammy</code> to <code>docker-compose.yml</code> with a named volume and healthcheck. Then <code>docker compose up -d mongodb</code>.</div>
+          <div class="code-block" style="margin-top:8px"><pre><span class="diff-add">  mongodb:</span>
+<span class="diff-add">    image: mongo:7-jammy</span>
+<span class="diff-add">    container_name: crm_mongodb</span>
+<span class="diff-add">    ports:</span>
+<span class="diff-add">      - '27017:27017'</span>
+<span class="diff-add">    volumes:</span>
+<span class="diff-add">      - mongo_data:/data/db</span></pre></div>
+        </div>
+        <div class="section-block">
+          <div class="section-label pm">🧠 Post-Mortem</div>
+          <div class="pm-box">
+            <div class="pm-text">The dev compose was kept minimal intentionally, but MongoDB is required for the backend to start. Any service wired into NestJS module imports will block startup if unavailable. Always run <code>docker compose up -d</code> before starting the app and verify all required services are healthy.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue #39 -->
+    <div class="issue-card open" id="issue-39">
+      <div class="issue-header" onclick="toggle(this)">
+        <span class="issue-num">#039</span>
+        <div class="issue-header-content">
+          <div class="issue-title">Wrong Health Check URL — /health Returns 404</div>
+          <div class="issue-tags">
+            <span class="tag tag-infra">deployment</span>
+            <span class="tag tag-nestjs">nestjs</span>
+          </div>
+        </div>
+        <span class="status-badge status-fixed">Fixed</span>
+        <span class="chevron">▶</span>
+      </div>
+      <div class="issue-body">
+        <div class="section-block">
+          <div class="section-label error">🚨 Error</div>
+          <div class="error-log">{"success":false,"statusCode":404,"message":"Cannot GET /health","path":"/health"}</div>
+        </div>
+        <div class="section-block">
+          <div class="section-label cause">⚠️ Root Cause</div>
+          <div class="cause-box">
+            <div class="prose">
+              The NestJS app has a global API prefix <code>/api/v1</code>. The health endpoint is registered under this prefix so the correct URL is <code>/api/v1/health</code>, not <code>/health</code>.
+            </div>
+          </div>
+        </div>
+        <div class="section-block">
+          <div class="section-label fix">🛠 Fix</div>
+          <div class="diff-cols">
+            <div class="diff-col">
+              <div class="diff-col-label">Wrong</div>
+              <div class="code-block"><pre><span class="diff-del">curl http://localhost:3001/health</span></pre></div>
+            </div>
+            <div class="diff-col">
+              <div class="diff-col-label">Correct</div>
+              <div class="code-block"><pre><span class="diff-add">curl http://localhost:3001/api/v1/health</span></pre></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue #40 -->
+    <div class="issue-card open" id="issue-40">
+      <div class="issue-header" onclick="toggle(this)">
+        <span class="issue-num">#040</span>
+        <div class="issue-header-content">
+          <div class="issue-title">Frontend Fails to Start — Port 3000 Already in Use (EADDRINUSE)</div>
+          <div class="issue-tags">
+            <span class="tag tag-infra">deployment</span>
+            <span class="tag tag-infra">next.js</span>
+          </div>
+        </div>
+        <span class="status-badge status-fixed">Fixed</span>
+        <span class="chevron">▶</span>
+      </div>
+      <div class="issue-body">
+        <div class="section-block">
+          <div class="section-label error">🚨 Error</div>
+          <div class="error-log">Error: listen EADDRINUSE: address already in use :::3000
+    code: 'EADDRINUSE', errno: -98, syscall: 'listen', port: 3000</div>
+        </div>
+        <div class="section-block">
+          <div class="section-label cause">⚠️ Root Cause</div>
+          <div class="cause-box">
+            <div class="prose">
+              A previous <code>npm start</code> process was still running in the background (or left as a zombie) even after an earlier crash. Starting a second instance tries to bind port 3000 again and fails immediately.
+            </div>
+          </div>
+        </div>
+        <div class="section-block">
+          <div class="section-label fix">🛠 Fix</div>
+          <div class="code-block"><pre><span class="diff-add">kill $(fuser 3000/tcp 2>/dev/null)</span>
+<span class="diff-add">nohup npm start > /tmp/crm-web.log 2>&1 &</span></pre></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Issue #41 -->
+    <div class="issue-card open" id="issue-41">
+      <div class="issue-header" onclick="toggle(this)">
+        <span class="issue-num">#041</span>
+        <div class="issue-header-content">
+          <div class="issue-title">Dashboard Shows 400 Errors — Stale .next Build Chunks After Env Change</div>
+          <div class="issue-tags">
+            <span class="tag tag-infra">deployment</span>
+            <span class="tag tag-infra">next.js</span>
+          </div>
+        </div>
+        <span class="status-badge status-fixed">Fixed</span>
+        <span class="chevron">▶</span>
+      </div>
+      <div class="issue-body">
+        <div class="section-block">
+          <div class="section-label error">🚨 Error</div>
+          <div class="error-log">Failed to load resource: 400 (Bad Request) _next/static/chunks/…fb3fdb413246b3.js
+Uncaught ChunkLoadError: Loading chunk 9305 failed.</div>
+        </div>
+        <div class="section-block">
+          <div class="section-label cause">⚠️ Root Cause</div>
+          <div class="cause-box">
+            <div class="prose">
+              The <code>.next/</code> build directory was from a previous build run with different environment variables (<code>NEXT_PUBLIC_API_URL=http://localhost:3001</code>). After updating <code>.env.local</code> to use the server's public IP, the app was started without rebuilding. The browser loaded the new HTML (referencing new chunk hashes) but the old chunks were still being served — causing 400s on JS files that no longer existed.
+            </div>
+          </div>
+        </div>
+        <div class="section-block">
+          <div class="section-label fix">🛠 Fix</div>
+          <div class="prose">Always rebuild after changing <code>.env.local</code> — <code>NEXT_PUBLIC_*</code> vars are baked into the build at compile time, not runtime.</div>
+          <div class="code-block" style="margin-top:8px"><pre><span class="diff-add">npm run build</span>
+<span class="diff-add">nohup npm start > /tmp/crm-web.log 2>&1 &</span></pre></div>
+        </div>
+        <div class="section-block">
+          <div class="section-label pm">🧠 Post-Mortem</div>
+          <div class="pm-box">
+            <div class="pm-text"><code>NEXT_PUBLIC_*</code> environment variables are embedded into the JavaScript bundle at build time — they are NOT injected at runtime like server-side env vars. Any change to these values requires a full <code>next build</code> before the new value takes effect. This is a common source of confusion when deploying Next.js to a new environment.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </section>
 
   <footer class="footer">
     <strong>CRM SaaS Backend — Debugging Log</strong><br/>
-    37 Issues · 33 Fixed · 4 Warnings · 10 Days<br/><br/>
+    41 Issues · 37 Fixed · 4 Warnings · 10 Days<br/><br/>
     <span>Stack: NestJS · Prisma · PostgreSQL · Redis · BullMQ · Socket.io · ethers.js · OpenAI</span><br/>
     <span style="color:var(--text-muted); font-size:12px; margin-top:8px; display:block;">
       Built and debugged from scratch — April 2026

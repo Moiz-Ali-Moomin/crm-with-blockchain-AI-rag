@@ -34,6 +34,20 @@ services:
       timeout: 5s
       retries: 5
 
+  mongodb:
+    image: mongo:7-jammy
+    container_name: crm_mongodb
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--eval', 'db.adminCommand("ping")']
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: crm_pgadmin
@@ -64,4 +78,5 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  mongo_data:
   pgadmin_data:
