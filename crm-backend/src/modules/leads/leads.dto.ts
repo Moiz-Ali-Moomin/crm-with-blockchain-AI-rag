@@ -26,14 +26,17 @@ export const UpdateLeadSchema = CreateLeadSchema.partial();
 const LEAD_SORT_FIELDS = ['createdAt', 'updatedAt', 'firstName', 'lastName', 'score', 'status', 'source'] as const;
 
 export const FilterLeadSchema = PaginationSchema.extend({
-  status: z.enum(['NEW', 'CONTACTED', 'QUALIFIED', 'UNQUALIFIED', 'NURTURING', 'CONVERTED', 'LOST']).optional(),
-  source: z.string().optional(),
-  assigneeId: z.string().uuid().optional(),
+  status: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.enum(['NEW', 'CONTACTED', 'QUALIFIED', 'UNQUALIFIED', 'NURTURING', 'CONVERTED', 'LOST']).optional(),
+  ),
+  source: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  assigneeId: z.preprocess((v) => (v === '' ? undefined : v), z.string().uuid().optional()),
   minScore: z.coerce.number().optional(),
   maxScore: z.coerce.number().optional(),
-  tags: z.string().optional(), // comma-separated
-  dateFrom: z.string().datetime().optional(),
-  dateTo: z.string().datetime().optional(),
+  tags: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  dateFrom: z.preprocess((v) => (v === '' ? undefined : v), z.string().datetime().optional()),
+  dateTo: z.preprocess((v) => (v === '' ? undefined : v), z.string().datetime().optional()),
   // Override PaginationSchema.sortBy to restrict to valid Lead columns
   sortBy: z.enum(LEAD_SORT_FIELDS).optional(),
 });

@@ -23,11 +23,11 @@ export const MoveDealStageSchema = z.object({
 });
 
 export const FilterDealSchema = PaginationSchema.extend({
-  pipelineId: z.string().uuid().optional(),
-  stageId: z.string().uuid().optional(),
-  status: z.enum(['OPEN', 'WON', 'LOST', 'ON_HOLD']).optional(),
-  ownerId: z.string().uuid().optional(),
-  contactId: z.string().uuid().optional(),
+  pipelineId: z.preprocess((v) => (v === '' ? undefined : v), z.string().uuid().optional()),
+  stageId: z.preprocess((v) => (v === '' ? undefined : v), z.string().uuid().optional()),
+  status: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['OPEN', 'WON', 'LOST', 'ON_HOLD']).optional()),
+  ownerId: z.preprocess((v) => (v === '' ? undefined : v), z.string().uuid().optional()),
+  contactId: z.preprocess((v) => (v === '' ? undefined : v), z.string().uuid().optional()),
   minValue: z.coerce.number().optional(),
   maxValue: z.coerce.number().optional(),
   closingDateFrom: z.string().datetime().optional(),

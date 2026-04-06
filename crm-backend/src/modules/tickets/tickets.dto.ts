@@ -24,10 +24,10 @@ export const AssignTicketSchema = z.object({
 });
 
 export const FilterTicketSchema = PaginationSchema.extend({
-  status: z.enum(['OPEN', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED']).optional(),
-  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
-  assigneeId: z.string().uuid().optional(),
-  contactId: z.string().uuid().optional(),
+  status: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['OPEN', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED']).optional()),
+  priority: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional()),
+  assigneeId: z.preprocess((v) => (v === '' ? undefined : v), z.string().uuid().optional()),
+  contactId: z.preprocess((v) => (v === '' ? undefined : v), z.string().uuid().optional()),
 });
 
 export const CreateTicketReplySchema = z.object({

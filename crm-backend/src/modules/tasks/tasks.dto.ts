@@ -18,12 +18,13 @@ export const CreateTaskSchema = z.object({
 export const UpdateTaskSchema = CreateTaskSchema.partial();
 
 export const FilterTaskSchema = PaginationSchema.extend({
-  status: z.enum(['TODO', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
-  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
-  assigneeId: z.string().uuid().optional(),
-  entityType: z
-    .enum(['LEAD', 'CONTACT', 'DEAL', 'COMPANY', 'TICKET'])
-    .optional(),
+  status: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['TODO', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional()),
+  priority: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional()),
+  assigneeId: z.preprocess((v) => (v === '' ? undefined : v), z.string().uuid().optional()),
+  entityType: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.enum(['LEAD', 'CONTACT', 'DEAL', 'COMPANY', 'TICKET']).optional(),
+  ),
   entityId: z.string().uuid().optional(),
   dueFrom: z.string().datetime().optional(),
   dueTo: z.string().datetime().optional(),
