@@ -90,6 +90,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
           script_stop: true
+          debug: true
           envs: DEPLOY_PATH,API_HEALTH_URL,APP_URL,PUBLIC_API_URL,POSTGRES_PASSWORD,REDIS_PASSWORD,MONGO_PASSWORD,JWT_SECRET,JWT_REFRESH_SECRET,SENDGRID_API_KEY,STRIPE_SECRET_KEY,OPENAI_API_KEY,BLOCKCHAIN_PRIVATE_KEY
           script: |
             set -Eeuo pipefail
@@ -158,6 +159,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
           script_stop: true
+          debug: true
           command_timeout: 30m
           envs: DEPLOY_SHA,DEPLOY_BRANCH,DEPLOY_PATH,API_HEALTH_URL,REPO_URL
           script: |
