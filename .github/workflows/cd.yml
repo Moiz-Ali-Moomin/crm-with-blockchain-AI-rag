@@ -27,6 +27,7 @@ jobs:
     env:
       DEPLOY_PATH: ${{ vars.PRODUCTION_DEPLOY_PATH || secrets.PRODUCTION_DEPLOY_PATH || secrets.DEPLOY_PATH }}
       API_HEALTH_URL: ${{ vars.PRODUCTION_API_HEALTH_URL || secrets.PRODUCTION_API_HEALTH_URL }}
+      REPO_URL: ${{ vars.PRODUCTION_REPO_URL || secrets.PRODUCTION_REPO_URL || format('{0}/{1}.git', github.server_url, github.repository) }}
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (
@@ -56,7 +57,8 @@ jobs:
           test -n "${{ secrets.DEPLOY_USER }}" || { echo "::error::Missing secret DEPLOY_USER"; exit 1; }
           test -n "${{ secrets.DEPLOY_SSH_KEY }}" || { echo "::error::Missing secret DEPLOY_SSH_KEY"; exit 1; }
           test -n "${DEPLOY_PATH}" || { echo "::error::Missing deploy path. Set vars.PRODUCTION_DEPLOY_PATH or secrets.DEPLOY_PATH"; exit 1; }
-          test -n "${API_HEALTH_URL}" || { echo "::error::Missing vars.PRODUCTION_API_HEALTH_URL"; exit 1; }
+          test -n "${API_HEALTH_URL}" || { echo "::error::Missing PRODUCTION_API_HEALTH_URL"; exit 1; }
+          test -n "${REPO_URL}" || { echo "::error::Missing repository URL"; exit 1; }
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -65,6 +67,7 @@ jobs:
           DEPLOY_BRANCH: ${{ steps.meta.outputs.branch }}
           DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
           API_HEALTH_URL: ${{ env.API_HEALTH_URL }}
+          REPO_URL: ${{ env.REPO_URL }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           port: ${{ secrets.DEPLOY_PORT || '22' }}
@@ -73,7 +76,7 @@ jobs:
           fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
           script_stop: true
           command_timeout: 30m
-          envs: DEPLOY_SHA,DEPLOY_BRANCH,DEPLOY_PATH,API_HEALTH_URL
+          envs: DEPLOY_SHA,DEPLOY_BRANCH,DEPLOY_PATH,API_HEALTH_URL,REPO_URL
           script: |
             set -Eeuo pipefail
 
@@ -90,23 +93,42 @@ jobs:
             : "${DEPLOY_SHA:?DEPLOY_SHA is required}"
             : "${DEPLOY_PATH:?DEPLOY_PATH is required}"
             : "${API_HEALTH_URL:?API_HEALTH_URL is required}"
+            : "${REPO_URL:?REPO_URL is required}"
 
             COMPOSE_FILE="${DEPLOY_PATH}/docker-compose.prod.yml"
+            ENV_FILE="${DEPLOY_PATH}/.env"
+            PARENT_DIR="$(dirname "${DEPLOY_PATH}")"
 
             echo "[INFO] Starting deploy for ${DEPLOY_BRANCH} @ ${DEPLOY_SHA}"
+            mkdir -p "${PARENT_DIR}"
+
+            if [ ! -d "${DEPLOY_PATH}/.git" ]; then
+              mkdir -p "${DEPLOY_PATH}"
+
+              if [ -n "$(find "${DEPLOY_PATH}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+                echo "[ERROR] ${DEPLOY_PATH} exists but is not a git repository. Refusing to overwrite existing files."
+                exit 1
+              fi
+
+              echo "[INFO] Repository not found. Cloning ${REPO_URL} into ${DEPLOY_PATH}"
+              git clone --branch "${DEPLOY_BRANCH}" --single-branch "${REPO_URL}" "${DEPLOY_PATH}"
+            fi
+
             cd "${DEPLOY_PATH}"
 
-            if [ ! -d .git ]; then
-              echo "[ERROR] ${DEPLOY_PATH} is not a git repository"
+            if [ ! -f "${ENV_FILE}" ]; then
+              echo "[ERROR] Missing ${ENV_FILE}. docker-compose.prod.yml requires root-level environment variables."
               exit 1
             fi
 
             git fetch --prune origin
+            git checkout "${DEPLOY_BRANCH}" || true
+            git pull --ff-only origin "${DEPLOY_BRANCH}"
             git checkout --force "${DEPLOY_SHA}"
 
             echo "[INFO] Building and starting containers"
-            docker compose -f "${COMPOSE_FILE}" build --pull api web
-            docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans postgres redis mongodb api web nginx
+            docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build --pull api web
+            docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --remove-orphans postgres redis mongodb api web nginx
 
             echo "[INFO] Waiting for API health check"
             for attempt in $(seq 1 24); do
@@ -124,4 +146,4 @@ jobs:
             done
 
             echo "[INFO] Deployment complete"
-            docker compose -f "${COMPOSE_FILE}" ps
+            docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps
