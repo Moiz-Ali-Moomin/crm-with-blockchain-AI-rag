@@ -1,0 +1,1375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NexusCRM — Hetzner Deployment Guide</title>
+  <style>
+    :root {
+      --bg:         #0d1117;
+      --bg2:        #161b22;
+      --bg3:        #21262d;
+      --bg4:        #30363d;
+      --border:     #30363d;
+      --text:       #e6edf3;
+      --text2:      #8b949e;
+      --text3:      #6e7681;
+      --accent:     #58a6ff;
+      --accent2:    #1f6feb;
+      --green:      #3fb950;
+      --green-bg:   #0d2119;
+      --yellow:     #d29922;
+      --yellow-bg:  #1c1810;
+      --red:        #f85149;
+      --red-bg:     #200d0d;
+      --purple:     #bc8cff;
+      --orange:     #ffa657;
+      --code-bg:    #161b22;
+      --code-border:#30363d;
+      --radius:     8px;
+      --radius-lg:  12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    .page { display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ────────────────────────────────────────────── */
+    .sidebar {
+      width: 260px;
+      min-width: 260px;
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      padding: 24px 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .sidebar-logo {
+      padding: 0 20px 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+
+    .sidebar-logo .logo-name {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+
+    .sidebar-logo .logo-sub {
+      font-size: 11px;
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-top: 2px;
+    }
+
+    .sidebar-section {
+      padding: 8px 20px 4px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text3);
+    }
+
+    .sidebar a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 20px;
+      color: var(--text2);
+      text-decoration: none;
+      font-size: 13.5px;
+      border-left: 2px solid transparent;
+      transition: all 0.15s;
+    }
+
+    .sidebar a:hover { color: var(--text); background: var(--bg3); }
+    .sidebar a.active { color: var(--accent); border-left-color: var(--accent); background: rgba(88,166,255,.06); }
+
+    .sidebar .step-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--bg4);
+      color: var(--text3);
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    /* ── Main ───────────────────────────────────────────────── */
+    .main {
+      flex: 1;
+      max-width: 900px;
+      padding: 48px 56px;
+      overflow-x: hidden;
+    }
+
+    /* ── Hero ───────────────────────────────────────────────── */
+    .hero {
+      background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 50%, #0d1117 100%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 40px 48px;
+      margin-bottom: 48px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -60px; right: -60px;
+      width: 200px; height: 200px;
+      background: radial-gradient(circle, rgba(88,166,255,.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(88,166,255,.1);
+      border: 1px solid rgba(88,166,255,.25);
+      color: var(--accent);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+    }
+
+    .hero h1 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.8px;
+      margin-bottom: 12px;
+      line-height: 1.2;
+    }
+
+    .hero h1 span { color: var(--accent); }
+
+    .hero p {
+      color: var(--text2);
+      font-size: 15px;
+      max-width: 580px;
+      margin-bottom: 24px;
+    }
+
+    .hero-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .tag {
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text2);
+    }
+
+    /* ── Sections ───────────────────────────────────────────── */
+    .section {
+      margin-bottom: 56px;
+      scroll-margin-top: 24px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .step-badge {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .section-header h2 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 24px 0 10px;
+    }
+
+    p { color: var(--text2); margin-bottom: 12px; }
+
+    /* ── Code blocks ────────────────────────────────────────── */
+    .code-block {
+      position: relative;
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: var(--radius);
+      margin: 14px 0;
+      overflow: hidden;
+    }
+
+    .code-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      background: var(--bg3);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .code-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text3);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .code-label .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    .copy-btn {
+      background: var(--bg4);
+      border: 1px solid var(--border);
+      color: var(--text2);
+      padding: 3px 10px;
+      border-radius: 5px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+
+    .copy-btn:hover { background: var(--accent2); color: #fff; border-color: var(--accent2); }
+    .copy-btn.copied { background: var(--green-bg); color: var(--green); border-color: var(--green); }
+
+    pre {
+      padding: 16px 18px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.7;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+    }
+
+    code { font-family: inherit; }
+
+    /* Syntax colours */
+    .c  { color: var(--text3); }        /* comment */
+    .k  { color: var(--purple); }       /* keyword */
+    .s  { color: var(--green); }        /* string */
+    .v  { color: var(--orange); }       /* variable/value */
+    .cmd{ color: var(--accent); }       /* command */
+    .fl { color: var(--text); }         /* flag */
+
+    /* inline code */
+    :not(pre) > code {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 13px;
+      color: var(--orange);
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+    }
+
+    /* ── Callouts ───────────────────────────────────────────── */
+    .callout {
+      display: flex;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      margin: 16px 0;
+      font-size: 13.5px;
+    }
+
+    .callout-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .callout p { margin: 0; }
+
+    .callout.info    { background: rgba(88,166,255,.08);  border: 1px solid rgba(88,166,255,.2);  color: #a5c8ff; }
+    .callout.warning { background: var(--yellow-bg);      border: 1px solid rgba(210,153,34,.3);  color: #e3b951; }
+    .callout.danger  { background: var(--red-bg);         border: 1px solid rgba(248,81,73,.25);  color: #ff8b87; }
+    .callout.success { background: var(--green-bg);       border: 1px solid rgba(63,185,80,.25);  color: #7ee787; }
+
+    /* ── Tables ─────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; margin: 14px 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+
+    thead th {
+      background: var(--bg3);
+      color: var(--text2);
+      font-weight: 600;
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    tbody td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text2);
+      vertical-align: top;
+    }
+
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: rgba(255,255,255,.02); }
+
+    td code { font-size: 12px; }
+
+    td strong { color: var(--text); font-weight: 600; }
+
+    /* ── Checklist ──────────────────────────────────────────── */
+    .checklist { list-style: none; margin: 12px 0; }
+
+    .checklist li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13.5px;
+      color: var(--text2);
+      margin-bottom: 2px;
+      transition: background 0.1s;
+    }
+
+    .checklist li:hover { background: var(--bg3); }
+
+    .checklist li::before {
+      content: '○';
+      color: var(--text3);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .checklist li.done { color: var(--text3); text-decoration: line-through; }
+    .checklist li.done::before { content: '✓'; color: var(--green); }
+
+    /* ── Pills / badges ─────────────────────────────────────── */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 9px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 600;
+    }
+
+    .pill.green  { background: var(--green-bg);  color: var(--green);  border: 1px solid rgba(63,185,80,.3);  }
+    .pill.blue   { background: rgba(88,166,255,.1); color: var(--accent); border: 1px solid rgba(88,166,255,.25); }
+    .pill.yellow { background: var(--yellow-bg); color: var(--yellow); border: 1px solid rgba(210,153,34,.3); }
+    .pill.red    { background: var(--red-bg);    color: var(--red);    border: 1px solid rgba(248,81,73,.25);  }
+
+    /* ── Grid cards ─────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+    }
+
+    .card-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    .card-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .card-sub {
+      font-size: 12px;
+      color: var(--text3);
+      margin-top: 2px;
+    }
+
+    /* ── Progress tracker ───────────────────────────────────── */
+    .progress-bar {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 40px;
+    }
+
+    .progress-bar h3 { margin: 0 0 16px; font-size: 13px; color: var(--text2); }
+
+    .steps-track {
+      display: flex;
+      gap: 0;
+      align-items: center;
+    }
+
+    .track-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+      gap: 6px;
+    }
+
+    .track-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--bg4);
+      border: 2px solid var(--border);
+      color: var(--text3);
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .track-label {
+      font-size: 10px;
+      color: var(--text3);
+      text-align: center;
+      max-width: 60px;
+      line-height: 1.3;
+    }
+
+    .track-line {
+      flex: 1;
+      height: 2px;
+      background: var(--border);
+      margin-bottom: 20px;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────── */
+    .footer {
+      margin-top: 64px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      color: var(--text3);
+      font-size: 12.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .footer a { color: var(--accent); text-decoration: none; }
+
+    /* ── Scrollbar ──────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+    /* ── Responsive ─────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      .sidebar { display: none; }
+      .main { padding: 24px 20px; }
+      .hero { padding: 28px 24px; }
+      .hero h1 { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ── Sidebar ────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-name">NexusCRM</div>
+      <div class="logo-sub">Deployment Guide</div>
+    </div>
+
+    <div class="sidebar-section">Getting Started</div>
+    <a href="#provision"><span class="step-num">1</span> Provision Server</a>
+    <a href="#dns"><span class="step-num">2</span> Point DNS</a>
+    <a href="#server-setup"><span class="step-num">3</span> Server Setup</a>
+    <a href="#docker"><span class="step-num">4</span> Install Docker</a>
+
+    <div class="sidebar-section">Application</div>
+    <a href="#clone"><span class="step-num">5</span> Clone Repo</a>
+    <a href="#env"><span class="step-num">6</span> Configure .env</a>
+    <a href="#nginx"><span class="step-num">7</span> Nginx Config</a>
+    <a href="#ssl"><span class="step-num">8</span> SSL Certificate</a>
+    <a href="#launch"><span class="step-num">9</span> Launch Services</a>
+    <a href="#migrate"><span class="step-num">10</span> Migrate & Seed</a>
+
+    <div class="sidebar-section">CI/CD & Ops</div>
+    <a href="#cicd"><span class="step-num">11</span> GitHub Actions</a>
+    <a href="#backups"><span class="step-num">12</span> Backups</a>
+    <a href="#monitoring">⟁ Monitoring</a>
+    <a href="#checklist">✓ Final Checklist</a>
+  </aside>
+
+  <!-- ── Main Content ──────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Hero -->
+    <div class="hero">
+      <div class="hero-badge">☁ Hetzner Cloud · Production</div>
+      <h1>Deploy <span>NexusCRM</span><br>to Production</h1>
+      <p>Step-by-step guide to deploy the full stack on a Hetzner VPS — Docker, Nginx, SSL, GitHub Actions CI/CD, backups, and monitoring.</p>
+      <div class="hero-tags">
+        <span class="tag">Ubuntu 22.04</span>
+        <span class="tag">Docker Compose</span>
+        <span class="tag">Nginx</span>
+        <span class="tag">Let's Encrypt SSL</span>
+        <span class="tag">GitHub Actions</span>
+        <span class="tag">PostgreSQL</span>
+        <span class="tag">Redis</span>
+        <span class="tag">MongoDB</span>
+      </div>
+    </div>
+
+    <!-- Progress tracker -->
+    <div class="progress-bar">
+      <h3>Deployment Steps Overview</h3>
+      <div class="steps-track">
+        <div class="track-step"><div class="track-dot">1</div><div class="track-label">Server</div></div>
+        <div class="track-line"></div>
+        <div class="track-step"><div class="track-dot">2</div><div class="track-label">DNS</div></div>
+        <div class="track-line"></div>
+        <div class="track-step"><div class="track-dot">3</div><div class="track-label">Setup</div></div>
+        <div class="track-line"></div>
+        <div class="track-step"><div class="track-dot">4</div><div class="track-label">Docker</div></div>
+        <div class="track-line"></div>
+        <div class="track-step"><div class="track-dot">5</div><div class="track-label">Clone</div></div>
+        <div class="track-line"></div>
+        <div class="track-step"><div class="track-dot">6</div><div class="track-label">Env</div></div>
+        <div class="track-line"></div>
+        <div class="track-step"><div class="track-dot">7</div><div class="track-label">SSL</div></div>
+        <div class="track-line"></div>
+        <div class="track-step"><div class="track-dot">8</div><div class="track-label">Launch</div></div>
+        <div class="track-line"></div>
+        <div class="track-step"><div class="track-dot">9</div><div class="track-label">CI/CD</div></div>
+        <div class="track-line"></div>
+        <div class="track-step"><div class="track-dot">10</div><div class="track-label">Done</div></div>
+      </div>
+    </div>
+
+    <!-- ── STEP 1 ─────────────────────────────────────────── -->
+    <section class="section" id="provision">
+      <div class="section-header">
+        <div class="step-badge">1</div>
+        <h2>Provision the Hetzner Server</h2>
+      </div>
+
+      <p>Log in to <strong>console.hetzner.cloud</strong> → New Project → Add Server. Use the following configuration:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Location</strong></td><td>Nuremberg (EU) or Ashburn (US)</td></tr>
+            <tr><td><strong>Image</strong></td><td>Ubuntu 22.04 LTS</td></tr>
+            <tr><td><strong>Type — Minimum</strong></td><td><code>CX22</code> — 2 vCPU, 4 GB RAM · ~€4.51/mo</td></tr>
+            <tr><td><strong>Type — Recommended</strong></td><td><code>CX32</code> — 4 vCPU, 8 GB RAM · ~€9.28/mo</td></tr>
+            <tr><td><strong>SSH Key</strong></td><td>Add your public key (<code>~/.ssh/id_rsa.pub</code>)</td></tr>
+            <tr><td><strong>Firewall</strong></td><td>Create new (see rules below)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Hetzner Firewall Rules</h3>
+      <p>In the Hetzner console under Firewalls, create these inbound rules:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Direction</th><th>Protocol</th><th>Port</th><th>Source</th></tr></thead>
+          <tbody>
+            <tr><td><span class="pill green">Inbound</span></td><td>TCP</td><td><code>22</code></td><td>Your IP only</td></tr>
+            <tr><td><span class="pill green">Inbound</span></td><td>TCP</td><td><code>80</code></td><td>Any (0.0.0.0/0)</td></tr>
+            <tr><td><span class="pill green">Inbound</span></td><td>TCP</td><td><code>443</code></td><td>Any (0.0.0.0/0)</td></tr>
+            <tr><td><span class="pill blue">Outbound</span></td><td>Any</td><td>Any</td><td>Any</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠</span>
+        <p>Restrict port 22 to your own IP address. This prevents brute-force SSH attacks. If your IP changes, update the rule in the Hetzner console.</p>
+      </div>
+    </section>
+
+    <!-- ── STEP 2 ─────────────────────────────────────────── -->
+    <section class="section" id="dns">
+      <div class="section-header">
+        <div class="step-badge">2</div>
+        <h2>Point Your Domain to the Server</h2>
+      </div>
+
+      <p>In your domain registrar's DNS settings, create two A records pointing to your Hetzner server IP:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Type</th><th>Name</th><th>Value</th><th>TTL</th></tr></thead>
+          <tbody>
+            <tr><td><code>A</code></td><td><code>@</code></td><td><code>YOUR_HETZNER_IP</code></td><td>300</td></tr>
+            <tr><td><code>A</code></td><td><code>www</code></td><td><code>YOUR_HETZNER_IP</code></td><td>300</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Verify DNS propagation (wait 5–30 min):</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">ping</span> your-domain.com
+<span class="c"># Should resolve to your Hetzner IP</span>
+
+<span class="cmd">nslookup</span> your-domain.com</code></pre>
+      </div>
+    </section>
+
+    <!-- ── STEP 3 ─────────────────────────────────────────── -->
+    <section class="section" id="server-setup">
+      <div class="section-header">
+        <div class="step-badge">3</div>
+        <h2>Initial Server Setup</h2>
+      </div>
+
+      <h3>SSH into the server</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">ssh</span> root@YOUR_HETZNER_IP</code></pre>
+      </div>
+
+      <h3>Update system packages</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">apt</span> update && apt upgrade -y</code></pre>
+      </div>
+
+      <h3>Create a non-root deploy user</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">adduser</span> deploy
+<span class="cmd">usermod</span> -aG sudo deploy
+
+<span class="c"># Copy SSH key to deploy user</span>
+<span class="cmd">mkdir</span> -p /home/deploy/.ssh
+<span class="cmd">cp</span> ~/.ssh/authorized_keys /home/deploy/.ssh/
+<span class="cmd">chown</span> -R deploy:deploy /home/deploy/.ssh
+<span class="cmd">chmod</span> 700 /home/deploy/.ssh
+<span class="cmd">chmod</span> 600 /home/deploy/.ssh/authorized_keys</code></pre>
+      </div>
+
+      <h3>Harden SSH — disable root login & passwords</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">nano</span> /etc/ssh/sshd_config
+
+<span class="c"># Set these values:</span>
+<span class="k">PermitRootLogin</span>         <span class="v">no</span>
+<span class="k">PasswordAuthentication</span>  <span class="v">no</span>
+
+<span class="cmd">systemctl</span> restart sshd</code></pre>
+      </div>
+
+      <h3>Enable UFW firewall</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">ufw</span> allow OpenSSH
+<span class="cmd">ufw</span> allow 80/tcp
+<span class="cmd">ufw</span> allow 443/tcp
+<span class="cmd">ufw</span> enable
+<span class="cmd">ufw</span> status</code></pre>
+      </div>
+
+      <div class="callout info">
+        <span class="callout-icon">ℹ</span>
+        <p>From this point, SSH as the <code>deploy</code> user — not root. All commands below assume you are logged in as <code>deploy</code>.</p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="c"># Exit root session and reconnect as deploy</span>
+<span class="cmd">exit</span>
+<span class="cmd">ssh</span> deploy@YOUR_HETZNER_IP</code></pre>
+      </div>
+    </section>
+
+    <!-- ── STEP 4 ─────────────────────────────────────────── -->
+    <section class="section" id="docker">
+      <div class="section-header">
+        <div class="step-badge">4</div>
+        <h2>Install Docker</h2>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="c"># Install Docker Engine (official script)</span>
+<span class="cmd">curl</span> -fsSL https://get.docker.com | sh
+
+<span class="c"># Add deploy user to docker group (no sudo needed)</span>
+<span class="cmd">sudo</span> usermod -aG docker $USER
+<span class="cmd">newgrp</span> docker
+
+<span class="c"># Verify</span>
+<span class="cmd">docker</span> --version
+<span class="cmd">docker</span> compose version</code></pre>
+      </div>
+    </section>
+
+    <!-- ── STEP 5 ─────────────────────────────────────────── -->
+    <section class="section" id="clone">
+      <div class="section-header">
+        <div class="step-badge">5</div>
+        <h2>Clone the Repository</h2>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">sudo</span> mkdir -p /opt/nexus-crm
+<span class="cmd">sudo</span> chown deploy:deploy /opt/nexus-crm
+
+<span class="cmd">git</span> clone https://github.com/Moiz-Ali-Moomin/crm-with-blockchain-rag.git /opt/nexus-crm
+<span class="cmd">cd</span> /opt/nexus-crm</code></pre>
+      </div>
+    </section>
+
+    <!-- ── STEP 6 ─────────────────────────────────────────── -->
+    <section class="section" id="env">
+      <div class="section-header">
+        <div class="step-badge">6</div>
+        <h2>Configure Environment Variables</h2>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">cp</span> crm-backend/.env.example crm-backend/.env
+<span class="cmd">nano</span> crm-backend/.env</code></pre>
+      </div>
+
+      <h3>Generate strong JWT secrets</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash — run twice</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">openssl</span> rand -hex 32
+<span class="c"># Copy output → JWT_SECRET</span>
+
+<span class="cmd">openssl</span> rand -hex 32
+<span class="c"># Copy output → JWT_REFRESH_SECRET</span></code></pre>
+      </div>
+
+      <h3>Production .env values</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>crm-backend/.env</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="c"># ── Application ──────────────────────────────</span>
+<span class="k">NODE_ENV</span>=<span class="v">production</span>
+<span class="k">PORT</span>=<span class="v">3001</span>
+<span class="k">APP_URL</span>=<span class="s">https://your-domain.com</span>
+<span class="k">API_URL</span>=<span class="s">https://your-domain.com/api</span>
+<span class="k">CORS_ORIGINS</span>=<span class="s">https://your-domain.com</span>
+
+<span class="c"># ── Databases (use container hostnames, NOT localhost) ──</span>
+<span class="k">DATABASE_URL</span>=<span class="s">postgresql://crm_user:STRONG_PASS@postgres:5432/crm_db?schema=public</span>
+<span class="k">REDIS_URL</span>=<span class="s">redis://redis:6379</span>
+<span class="k">MONGO_URI</span>=<span class="s">mongodb://crm_mongo:STRONG_PASS@mongodb:27017/crm_logs?authSource=admin</span>
+
+<span class="c"># ── Auth ──────────────────────────────────────</span>
+<span class="k">JWT_SECRET</span>=<span class="s">&lt;output of openssl rand -hex 32&gt;</span>
+<span class="k">JWT_REFRESH_SECRET</span>=<span class="s">&lt;output of openssl rand -hex 32&gt;</span>
+<span class="k">JWT_EXPIRES_IN</span>=<span class="v">15m</span>
+<span class="k">JWT_REFRESH_EXPIRES_IN</span>=<span class="v">7d</span>
+
+<span class="c"># ── Email ─────────────────────────────────────</span>
+<span class="k">SENDGRID_API_KEY</span>=<span class="s">SG.xxx</span>
+<span class="k">SENDGRID_FROM_EMAIL</span>=<span class="s">noreply@your-domain.com</span>
+
+<span class="c"># ── SMS / WhatsApp ────────────────────────────</span>
+<span class="k">TWILIO_ACCOUNT_SID</span>=<span class="s">ACxxx</span>
+<span class="k">TWILIO_AUTH_TOKEN</span>=<span class="s">xxx</span>
+<span class="k">TWILIO_PHONE_NUMBER</span>=<span class="s">+1234567890</span>
+
+<span class="c"># ── Payments ──────────────────────────────────</span>
+<span class="k">STRIPE_SECRET_KEY</span>=<span class="s">sk_live_xxx</span>
+<span class="k">STRIPE_WEBHOOK_SECRET</span>=<span class="s">whsec_xxx</span>
+
+<span class="c"># ── AI / RAG ──────────────────────────────────</span>
+<span class="k">OPENAI_API_KEY</span>=<span class="s">sk-xxx</span>
+
+<span class="c"># ── Blockchain ────────────────────────────────</span>
+<span class="k">BLOCKCHAIN_RPC_URL</span>=<span class="s">https://polygon-mumbai.g.alchemy.com/v2/YOUR_KEY</span>
+<span class="k">BLOCKCHAIN_PRIVATE_KEY</span>=<span class="s">0xYOUR_WALLET_KEY</span>
+<span class="k">BLOCKCHAIN_CONTRACT_ADDR</span>=<span class="s">0xYOUR_CONTRACT</span>
+<span class="k">BLOCKCHAIN_NETWORK</span>=<span class="v">polygon-mumbai</span>
+
+<span class="c"># ── Logging ───────────────────────────────────</span>
+<span class="k">LOG_LEVEL</span>=<span class="v">info</span></code></pre>
+      </div>
+
+      <div class="callout danger">
+        <span class="callout-icon">⛔</span>
+        <p>Use container hostnames (<code>postgres</code>, <code>redis</code>, <code>mongodb</code>) in DATABASE_URL/REDIS_URL/MONGO_URI — not <code>localhost</code>. Inside Docker, containers talk to each other by service name.</p>
+      </div>
+    </section>
+
+    <!-- ── STEP 7 ─────────────────────────────────────────── -->
+    <section class="section" id="nginx">
+      <div class="section-header">
+        <div class="step-badge">7</div>
+        <h2>Configure Nginx & Get SSL</h2>
+      </div>
+
+      <h3>Update Nginx config with your domain</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">nano</span> /opt/nexus-crm/nginx/conf.d/app.conf
+
+<span class="c"># Replace ALL occurrences of "your-domain.com" with your actual domain</span></code></pre>
+      </div>
+
+      <h3>Start Nginx on HTTP first (needed for SSL challenge)</h3>
+      <p>Temporarily comment out the HTTPS server block — only keep the HTTP block active. Then:</p>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">cd</span> /opt/nexus-crm
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml up -d nginx</code></pre>
+      </div>
+    </section>
+
+    <!-- ── STEP 8 ─────────────────────────────────────────── -->
+    <section class="section" id="ssl">
+      <div class="section-header">
+        <div class="step-badge">8</div>
+        <h2>Issue SSL Certificate</h2>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">docker</span> compose -f docker-compose.prod.yml run --rm certbot certonly \
+  --webroot \
+  --webroot-path=/var/www/certbot \
+  -d your-domain.com \
+  -d www.your-domain.com \
+  --email your@email.com \
+  --agree-tos \
+  --no-eff-email</code></pre>
+      </div>
+
+      <p>After the certificate is issued, re-enable the HTTPS block in <code>nginx/conf.d/app.conf</code>, then reload:</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="c"># Re-enable HTTPS server block in nginx/conf.d/app.conf</span>
+<span class="cmd">nano</span> nginx/conf.d/app.conf
+
+<span class="c"># Reload Nginx with new config</span>
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml restart nginx</code></pre>
+      </div>
+    </section>
+
+    <!-- ── STEP 9 ─────────────────────────────────────────── -->
+    <section class="section" id="launch">
+      <div class="section-header">
+        <div class="step-badge">9</div>
+        <h2>Launch All Services</h2>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">cd</span> /opt/nexus-crm
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml up -d --build</code></pre>
+      </div>
+
+      <h3>Verify all containers are healthy</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">docker</span> compose -f docker-compose.prod.yml ps
+
+<span class="c"># All containers should show "healthy" or "running"
+# Watch logs in real time</span>
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml logs -f</code></pre>
+      </div>
+
+      <h3>Test the health endpoint</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">curl</span> https://your-domain.com/api/health
+<span class="c"># Expected: {"status":"ok","info":{...}}</span></code></pre>
+      </div>
+    </section>
+
+    <!-- ── STEP 10 ────────────────────────────────────────── -->
+    <section class="section" id="migrate">
+      <div class="section-header">
+        <div class="step-badge">10</div>
+        <h2>Run Migrations & Seed</h2>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="c"># Apply all Prisma migrations</span>
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
+
+<span class="c"># Seed demo data (first run only!)</span>
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml exec api npm run seed</code></pre>
+      </div>
+
+      <div class="callout success">
+        <span class="callout-icon">✓</span>
+        <p>Visit <code>https://your-domain.com</code> — your CRM is live. Log in with <code>admin@acme.com</code> / <code>Password123!</code></p>
+      </div>
+    </section>
+
+    <!-- ── STEP 11 ────────────────────────────────────────── -->
+    <section class="section" id="cicd">
+      <div class="section-header">
+        <div class="step-badge">11</div>
+        <h2>GitHub Actions CI/CD</h2>
+      </div>
+
+      <p>Every merge to <code>main</code> will automatically build new Docker images and SSH-deploy to your server. Add these secrets in <strong>GitHub → Settings → Secrets and variables → Actions</strong>:</p>
+
+      <h3>Server Secrets</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Secret Name</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td><code>DEPLOY_HOST</code></td><td>Your Hetzner IP address</td></tr>
+            <tr><td><code>DEPLOY_USER</code></td><td><code>deploy</code></td></tr>
+            <tr><td><code>DEPLOY_SSH_KEY</code></td><td>Contents of <code>~/.ssh/id_rsa</code> (your private key)</td></tr>
+            <tr><td><code>DEPLOY_PATH</code></td><td><code>/opt/nexus-crm</code></td></tr>
+            <tr><td><code>APP_URL</code></td><td><code>https://your-domain.com</code></td></tr>
+            <tr><td><code>API_URL</code></td><td><code>https://your-domain.com/api</code></td></tr>
+            <tr><td><code>CORS_ORIGINS</code></td><td><code>https://your-domain.com</code></td></tr>
+            <tr><td><code>NEXT_PUBLIC_API_URL</code></td><td><code>https://your-domain.com/api</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>App Secrets (Production .env)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Secret Name</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>PROD_DATABASE_URL</code></td><td>PostgreSQL connection string</td></tr>
+            <tr><td><code>PROD_REDIS_URL</code></td><td><code>redis://redis:6379</code></td></tr>
+            <tr><td><code>PROD_MONGO_URI</code></td><td>MongoDB connection string</td></tr>
+            <tr><td><code>PROD_JWT_SECRET</code></td><td>Min 32-char random string</td></tr>
+            <tr><td><code>PROD_JWT_REFRESH_SECRET</code></td><td>Min 32-char random string</td></tr>
+            <tr><td><code>PROD_OPENAI_API_KEY</code></td><td>OpenAI API key</td></tr>
+            <tr><td><code>PROD_STRIPE_SECRET_KEY</code></td><td>Stripe secret key</td></tr>
+            <tr><td><code>PROD_STRIPE_WEBHOOK_SECRET</code></td><td>Stripe webhook secret</td></tr>
+            <tr><td><code>PROD_SENDGRID_API_KEY</code></td><td>SendGrid API key</td></tr>
+            <tr><td><code>PROD_TWILIO_ACCOUNT_SID</code></td><td>Twilio account SID</td></tr>
+            <tr><td><code>PROD_TWILIO_AUTH_TOKEN</code></td><td>Twilio auth token</td></tr>
+            <tr><td><code>PROD_BLOCKCHAIN_RPC_URL</code></td><td>Polygon RPC endpoint</td></tr>
+            <tr><td><code>PROD_BLOCKCHAIN_PRIVATE_KEY</code></td><td>Signer wallet private key</td></tr>
+            <tr><td><code>PROD_BLOCKCHAIN_CONTRACT_ADDR</code></td><td>Deployed contract address</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Manual deploy (without CI/CD)</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash — on the server</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">cd</span> /opt/nexus-crm
+<span class="cmd">git</span> pull origin main
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml up -d --build --remove-orphans
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml exec -T api npx prisma migrate deploy
+<span class="cmd">docker</span> image prune -f</code></pre>
+      </div>
+    </section>
+
+    <!-- ── STEP 12 ────────────────────────────────────────── -->
+    <section class="section" id="backups">
+      <div class="section-header">
+        <div class="step-badge">12</div>
+        <h2>Automated Backups</h2>
+      </div>
+
+      <h3>Create the backup script</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">sudo</span> mkdir -p /opt/backups/postgres
+<span class="cmd">sudo</span> nano /opt/backups/backup-db.sh</code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>/opt/backups/backup-db.sh</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="k">#!/bin/bash</span>
+<span class="k">set</span> -e
+
+<span class="v">TIMESTAMP</span>=$(<span class="cmd">date</span> +%Y%m%d_%H%M%S)
+<span class="v">BACKUP_DIR</span>=/opt/backups/postgres
+
+<span class="cmd">mkdir</span> -p $BACKUP_DIR
+
+<span class="cmd">docker</span> compose -f /opt/nexus-crm/docker-compose.prod.yml exec -T postgres \
+  pg_dump -U crm_user crm_db | <span class="cmd">gzip</span> > <span class="s">"$BACKUP_DIR/crm_db_$TIMESTAMP.sql.gz"</span>
+
+<span class="c"># Keep 30 days of backups</span>
+<span class="cmd">find</span> $BACKUP_DIR -name <span class="s">"*.sql.gz"</span> -mtime +30 -delete
+
+<span class="cmd">echo</span> <span class="s">"Backup complete: crm_db_$TIMESTAMP.sql.gz"</span></code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">sudo</span> chmod +x /opt/backups/backup-db.sh
+
+<span class="c"># Test it manually</span>
+<span class="cmd">sudo</span> /opt/backups/backup-db.sh
+
+<span class="c"># Set up cron — runs at 2am daily</span>
+<span class="cmd">crontab</span> -e</code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>crontab</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="c"># Daily DB backup at 2am</span>
+<span class="v">0 2 * * *</span> /opt/backups/backup-db.sh >> /var/log/crm-backup.log 2>&1
+
+<span class="c"># SSL certificate renewal every Monday at 3am</span>
+<span class="v">0 3 * * 1</span> cd /opt/nexus-crm && docker compose -f docker-compose.prod.yml run --rm certbot renew && docker compose -f docker-compose.prod.yml restart nginx >> /var/log/certbot-renew.log 2>&1</code></pre>
+      </div>
+
+      <h3>Restore from backup</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">gunzip</span> -c /opt/backups/postgres/crm_db_20260401_020000.sql.gz | \
+  <span class="cmd">docker</span> compose -f docker-compose.prod.yml exec -T postgres \
+  psql -U crm_user -d crm_db</code></pre>
+      </div>
+    </section>
+
+    <!-- ── Monitoring ─────────────────────────────────────── -->
+    <section class="section" id="monitoring">
+      <div class="section-header">
+        <div class="step-badge" style="background: linear-gradient(135deg, #3d3d3d, #555);">⟁</div>
+        <h2>Monitoring & Useful Commands</h2>
+      </div>
+
+      <h3>Container status & resource usage</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="c"># All container statuses</span>
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml ps
+
+<span class="c"># Live resource usage (CPU, memory)</span>
+<span class="cmd">docker</span> stats --no-stream
+
+<span class="c"># Health check endpoint</span>
+<span class="cmd">curl</span> https://your-domain.com/api/health | python3 -m json.tool</code></pre>
+      </div>
+
+      <h3>Logs</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="c"># All services</span>
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml logs -f
+
+<span class="c"># Single service</span>
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml logs -f api
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml logs -f web
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml logs -f nginx
+
+<span class="c"># Workers only</span>
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml logs -f api | grep -E "Worker|Queue|job"</code></pre>
+      </div>
+
+      <h3>Database access</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="c"># PostgreSQL shell</span>
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml exec postgres psql -U crm_user -d crm_db
+
+<span class="c"># Redis CLI</span>
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml exec redis redis-cli ping
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml exec redis redis-cli info memory
+
+<span class="c"># Enter API container</span>
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml exec api sh</code></pre>
+      </div>
+
+      <h3>Restart a single service</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">docker</span> compose -f docker-compose.prod.yml restart api
+<span class="cmd">docker</span> compose -f docker-compose.prod.yml restart nginx</code></pre>
+      </div>
+
+      <h3>Disk usage</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="c"># Docker volumes and images</span>
+<span class="cmd">docker</span> system df
+
+<span class="c"># Clean up unused images (safe)</span>
+<span class="cmd">docker</span> image prune -f</code></pre>
+      </div>
+    </section>
+
+    <!-- ── Checklist ──────────────────────────────────────── -->
+    <section class="section" id="checklist">
+      <div class="section-header">
+        <div class="step-badge" style="background: linear-gradient(135deg, #1a6e2e, #3fb950);">✓</div>
+        <h2>Final Deployment Checklist</h2>
+      </div>
+
+      <ul class="checklist">
+        <li>Hetzner CX22+ server provisioned (Ubuntu 22.04)</li>
+        <li>DNS A records point to server IP</li>
+        <li>Non-root <code>deploy</code> user created</li>
+        <li>Root SSH login disabled, password auth disabled</li>
+        <li>UFW firewall enabled (22, 80, 443 only)</li>
+        <li>Docker + Docker Compose installed</li>
+        <li>Repo cloned to <code>/opt/nexus-crm</code></li>
+        <li><code>crm-backend/.env</code> filled with production values</li>
+        <li>JWT secrets generated with <code>openssl rand -hex 32</code></li>
+        <li>Database URLs use container hostnames (not localhost)</li>
+        <li><code>nginx/conf.d/app.conf</code> updated with real domain</li>
+        <li>SSL certificate issued via Certbot</li>
+        <li>HTTPS server block re-enabled in Nginx config</li>
+        <li><code>docker compose -f docker-compose.prod.yml up -d --build</code></li>
+        <li>All containers show healthy in <code>docker compose ps</code></li>
+        <li><code>prisma migrate deploy</code> run successfully</li>
+        <li>Demo seed run (first time)</li>
+        <li>Health endpoint returns <code>{"status":"ok"}</code></li>
+        <li>GitHub Actions secrets configured (11 server + app secrets)</li>
+        <li>CD pipeline triggered successfully on push to main</li>
+        <li>Daily backup cron configured</li>
+        <li>SSL renewal cron configured</li>
+      </ul>
+
+      <div class="callout success" style="margin-top: 24px;">
+        <span class="callout-icon">🚀</span>
+        <p>When all boxes are checked, your production CRM is fully deployed, secured, and automated. Every <code>git push</code> to <code>main</code> deploys automatically.</p>
+      </div>
+    </section>
+
+    <!-- ── Pricing ────────────────────────────────────────── -->
+    <section class="section">
+      <div class="section-header">
+        <div class="step-badge" style="background: linear-gradient(135deg, #3d3d3d, #555);">€</div>
+        <h2>Estimated Monthly Cost</h2>
+      </div>
+
+      <div class="cards">
+        <div class="card">
+          <div class="card-title">Hetzner CX22</div>
+          <div class="card-value">~€4.51</div>
+          <div class="card-sub">2 vCPU · 4 GB RAM · Minimum</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Hetzner CX32</div>
+          <div class="card-value">~€9.28</div>
+          <div class="card-sub">4 vCPU · 8 GB RAM · Recommended</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Bandwidth</div>
+          <div class="card-value">Free</div>
+          <div class="card-sub">20 TB included on CX22+</div>
+        </div>
+        <div class="card">
+          <div class="card-title">SSL Certificate</div>
+          <div class="card-value">Free</div>
+          <div class="card-sub">Let's Encrypt via Certbot</div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>NexusCRM Deployment Guide · Hetzner Cloud</span>
+      <span>
+        <a href="https://github.com/Moiz-Ali-Moomin/crm-with-blockchain-rag" target="_blank">GitHub</a>
+        ·
+        <a href="https://console.hetzner.cloud" target="_blank">Hetzner Console</a>
+        ·
+        <a href="https://docs.hetzner.com/cloud" target="_blank">Hetzner Docs</a>
+      </span>
+    </footer>
+
+  </main>
+</div>
+
+<script>
+  // ── Copy button ──────────────────────────────────────────
+  function copy(btn) {
+    const pre = btn.closest('.code-block').querySelector('pre');
+    const text = pre.innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = 'Copy';
+        btn.classList.remove('copied');
+      }, 2000);
+    });
+  }
+
+  // ── Active sidebar link on scroll ───────────────────────
+  const sections = document.querySelectorAll('.section[id]');
+  const sidebarLinks = document.querySelectorAll('.sidebar a[href^="#"]');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        sidebarLinks.forEach(a => a.classList.remove('active'));
+        const active = document.querySelector(`.sidebar a[href="#${entry.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { threshold: 0.3, rootMargin: '-80px 0px -60% 0px' });
+
+  sections.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>
