@@ -7,13 +7,22 @@ import {
   Bell, ChevronDown, Settings, LogOut, User,
   Search, Command,
 } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuthStore } from '@/store/auth.store';
 import { notificationsApi } from '@/lib/api/notifications.api';
 import { authApi } from '@/lib/api/auth.api';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { queryKeys } from '@/lib/query/query-keys';
-import { cn } from '@/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn, parseEnumLabel } from '@/lib/utils';
 
 interface NavbarProps {
   onMenuToggle: () => void;
@@ -47,18 +56,6 @@ function resolvePageTitle(pathname: string): string {
   return 'CRM Platform';
 }
 
-const dropdownVariants = {
-  hidden:  { opacity: 0, y: -6, scale: 0.97 },
-  visible: {
-    opacity: 1, y: 0, scale: 1,
-    transition: { duration: 0.18, ease: [0.25, 0.46, 0.45, 0.94] },
-  },
-  exit: {
-    opacity: 0, y: -4, scale: 0.97,
-    transition: { duration: 0.12 },
-  },
-};
-
 export function Navbar({ onMenuToggle }: NavbarProps) {
   const router   = useRouter();
   const pathname = usePathname();
@@ -66,8 +63,6 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
   const logout   = useAuthStore((s) => s.logout);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [notifOpen,    setNotifOpen]    = useState(false);
-  const dropdownRef                     = useRef<HTMLDivElement>(null);
 
   const { data: unreadData } = useQuery({
     queryKey: queryKeys.notifications.unreadCount(user?.id ?? ''),
@@ -81,18 +76,6 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
   const initials    = user
     ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
     : 'U';
-
-  // Close dropdowns on outside click
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-        setNotifOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
   const handleLogout = async () => {
     setDropdownOpen(false);
@@ -130,7 +113,7 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
       </div>
 
       {/* Right: search + bell + user */}
-      <div className="flex items-center gap-1.5" ref={dropdownRef}>
+      <div className="flex items-center gap-1.5">
         {/* Command search */}
         <button
           className={cn(
@@ -151,11 +134,11 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
         {/* Notifications */}
         <div className="relative">
           <button
-            onClick={() => { setNotifOpen(false); router.push('/notifications'); }}
+            onClick={() => router.push('/notifications')}
             className={cn(
               'relative w-8 h-8 rounded-lg flex items-center justify-center',
               'text-white/50 hover:text-white hover:bg-white/8',
-              'transition-all duration-150',
+              'transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20',
             )}
           >
             <Bell size={16} strokeWidth={1.8} />
@@ -172,7 +155,7 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
                     'bg-gradient-to-br from-violet-500 to-blue-500',
                     'text-white text-[9px] font-bold rounded-full',
                     'flex items-center justify-center',
-                    'shadow-purple-glow',
+                    'shadow-[0_8px_18px_rgba(99,102,241,0.35)]',
                   )}
                 >
                   {unreadCount > 99 ? '99+' : unreadCount}
@@ -186,99 +169,97 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
         <div className="h-4 w-px bg-white/10 mx-1" />
 
         {/* User dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => setDropdownOpen((o) => !o)}
-            className={cn(
-              'flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-xl',
-              'hover:bg-white/6 border border-transparent hover:border-white/10',
-              'transition-all duration-150 group',
-            )}
-          >
-            <div className="relative">
-              <Avatar className="w-7 h-7">
-                <AvatarFallback className="bg-gradient-to-br from-violet-500 to-blue-600 text-white text-[11px] font-bold">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-              <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full border-2 border-slate-900" />
-            </div>
-            <span className="text-[13px] font-medium text-white/70 group-hover:text-white/90 hidden sm:block transition-colors">
-              {user?.firstName}
-            </span>
-            <ChevronDown
-              size={12}
-              strokeWidth={2.5}
+        <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+          <DropdownMenuTrigger asChild>
+            <button
               className={cn(
-                'text-white/30 transition-transform duration-200',
-                dropdownOpen && 'rotate-180',
+                'flex items-center gap-2 rounded-xl border border-transparent pl-1.5 pr-2.5 py-1',
+                'text-left transition-all duration-150 group',
+                'hover:border-white/10 hover:bg-white/6',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-0',
+                'data-[state=open]:border-white/12 data-[state=open]:bg-white/8',
               )}
-            />
-          </button>
-
-          <AnimatePresence>
-            {dropdownOpen && (
-              <motion.div
-                key="user-dropdown"
-                variants={dropdownVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
+              aria-label="Open user menu"
+            >
+              <div className="relative">
+                <Avatar className="h-8 w-8 ring-1 ring-white/10">
+                  <AvatarFallback className="bg-gradient-to-br from-violet-500 to-blue-600 text-[11px] font-bold text-white">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-slate-950 bg-emerald-400" />
+              </div>
+              <div className="hidden min-w-0 sm:block">
+                <p className="truncate text-[13px] font-medium text-white/78 transition-colors group-hover:text-white">
+                  {user?.firstName} {user?.lastName}
+                </p>
+                <p className="truncate text-[11px] text-slate-400">
+                  {user?.role ? parseEnumLabel(user.role) : 'User'}
+                </p>
+              </div>
+              <ChevronDown
+                size={12}
+                strokeWidth={2.5}
                 className={cn(
-                  'absolute right-0 top-[calc(100%+8px)] w-56',
-                  'glass-elevated rounded-2xl overflow-hidden',
-                  'z-50',
+                  'text-white/35 transition-transform duration-200',
+                  dropdownOpen && 'rotate-180',
                 )}
+              />
+            </button>
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent
+            align="end"
+            side="bottom"
+            sideOffset={10}
+            collisionPadding={12}
+            className="z-[90]"
+          >
+            <div className="rounded-[18px] bg-white/[0.03] p-1">
+              <DropdownMenuLabel className="px-3 pb-3 pt-2 normal-case tracking-normal text-inherit">
+                <div className="flex items-start gap-3">
+                  <Avatar className="mt-0.5 h-10 w-10 ring-1 ring-white/10">
+                    <AvatarFallback className="bg-gradient-to-br from-violet-500 to-blue-600 text-xs font-semibold text-white">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {user?.firstName} {user?.lastName}
+                    </p>
+                    <p className="truncate text-xs text-slate-400">{user?.email}</p>
+                    <span className="inline-flex items-center rounded-full border border-violet-400/15 bg-violet-500/12 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-200/90">
+                      {user?.role ? parseEnumLabel(user.role) : 'User'}
+                    </span>
+                  </div>
+                </div>
+              </DropdownMenuLabel>
+
+              <DropdownMenuSeparator />
+
+              <DropdownMenuGroup>
+                <DropdownMenuItem onSelect={() => router.push('/settings')}>
+                  <User size={15} strokeWidth={1.9} className="text-slate-400" />
+                  <span className="flex-1">Profile</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => router.push('/settings')}>
+                  <Settings size={15} strokeWidth={1.9} className="text-slate-400" />
+                  <span className="flex-1">Settings</span>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+
+              <DropdownMenuSeparator />
+
+              <DropdownMenuItem
+                onSelect={handleLogout}
+                className="text-rose-300 hover:bg-rose-500/10 hover:text-rose-200 focus:bg-rose-500/12 focus:text-rose-100"
               >
-                {/* User info header */}
-                <div className="px-4 py-3 border-b border-white/8">
-                  <p className="text-sm font-semibold text-white/90 truncate">
-                    {user?.firstName} {user?.lastName}
-                  </p>
-                  <p className="text-xs text-white/40 truncate mt-0.5">{user?.email}</p>
-                  <span className="inline-flex items-center mt-1.5 px-1.5 py-0.5 rounded-md bg-violet-500/20 border border-violet-400/20 text-[10px] font-semibold text-violet-300 uppercase tracking-wide">
-                    {user?.role.replace(/_/g, ' ')}
-                  </span>
-                </div>
-
-                {/* Menu items */}
-                <div className="py-1.5">
-                  {[
-                    { icon: User,     label: 'Profile',  href: '/settings' },
-                    { icon: Settings, label: 'Settings', href: '/settings' },
-                  ].map(({ icon: Icon, label, href }) => (
-                    <button
-                      key={label}
-                      onClick={() => { setDropdownOpen(false); router.push(href); }}
-                      className={cn(
-                        'w-full flex items-center gap-3 px-4 py-2.5',
-                        'text-[13px] text-white/60 hover:text-white hover:bg-white/6',
-                        'transition-colors duration-100',
-                      )}
-                    >
-                      <Icon size={14} strokeWidth={1.8} />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="border-t border-white/8 py-1.5">
-                  <button
-                    onClick={handleLogout}
-                    className={cn(
-                      'w-full flex items-center gap-3 px-4 py-2.5',
-                      'text-[13px] text-rose-400/80 hover:text-rose-300 hover:bg-rose-500/8',
-                      'transition-colors duration-100',
-                    )}
-                  >
-                    <LogOut size={14} strokeWidth={1.8} />
-                    Sign out
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+                <LogOut size={15} strokeWidth={1.9} className="text-rose-300/90" />
+                <span className="flex-1">Sign out</span>
+              </DropdownMenuItem>
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   );
