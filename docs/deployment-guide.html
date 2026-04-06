@@ -1309,6 +1309,47 @@ ChunkLoadError: Loading chunk failed.</code>
 nohup npm start > /tmp/crm-web.log 2>&1 &</pre>
         </div>
       </div>
+
+      <div class="callout" style="background:var(--red-bg); border:1px solid rgba(248,81,73,.28); color:#ff7b72; margin-bottom:20px">
+        <strong>#10 — Analytics page 500 on /analytics/revenue — Prisma camelCase column names in raw SQL</strong><br/><br/>
+        <strong>Error:</strong><br/>
+        <code style="display:block; background:rgba(0,0,0,.3); padding:10px; border-radius:6px; margin:8px 0; font-size:13px">GET /api/v1/analytics/revenue → 500 Internal Server Error
+Uncaught TypeError: Cannot read properties of undefined (reading 'replace')</code>
+        <strong>Cause:</strong> Prisma migrations preserve camelCase field names as column names exactly — <code>wonAt</code>, <code>tenantId</code>, <code>ownerId</code>, <code>firstName</code>, etc. Raw <code>$queryRaw</code> bypasses the ORM, so snake_case names like <code>won_at</code>, <code>tenant_id</code>, <code>owner_id</code> fail silently in PostgreSQL (column not found → 500). The frontend TypeError was a downstream effect: undefined data passed to chart formatters.<br/><br/>
+        Three additional shape mismatches were also fixed at the same time:
+        <ul style="margin:8px 0 8px 18px; font-size:13px; line-height:1.8">
+          <li><code>getLeadSourceBreakdown</code> returned raw Prisma <code>{ _count: { id } }</code> — frontend expected <code>{ count, percentage }</code></li>
+          <li><code>getPipelineFunnel</code> returned <code>{ stageName, dealCount }</code> + used a route param (<code>:pipelineId</code>) — frontend sent a query param and expected <code>{ stage, count, value, conversionRate }</code></li>
+          <li><code>getSalesPerformance</code> returned <code>{ user: { firstName }, deals }</code> — frontend expected <code>{ userId, name, dealsWon, leadsConverted }</code></li>
+        </ul>
+        <strong>Fix — raw SQL column names (analytics.service.ts):</strong>
+        <div class="code-block" style="margin-top:8px">
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+          <pre>// Before (crashes — snake_case does not exist in DB)
+TO_CHAR("won_at", 'YYYY-MM') AS month_key
+WHERE tenant_id = ${tenantId}
+  AND won_at   >= ${startDate}
+JOIN users u ON u.id = d.owner_id
+
+// After (correct — Prisma keeps camelCase column names)
+TO_CHAR("wonAt", 'YYYY-MM') AS month_key
+WHERE "tenantId" = ${tenantId}
+  AND "wonAt"   >= ${startDate}
+JOIN users u ON u.id = d."ownerId"</pre>
+        </div>
+        <strong>Fix — controller route (analytics.controller.ts):</strong>
+        <div class="code-block" style="margin-top:8px">
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+          <pre>// Before
+@Get('pipeline-funnel/:pipelineId')
+getPipelineFunnel(@Param('pipelineId') id: string)
+
+// After
+@Get('pipeline-funnel')
+getPipelineFunnel(@Query('pipelineId') id: string)</pre>
+        </div>
+        <strong>Rule:</strong> Before writing any <code>$queryRaw</code>, grep the migration SQL to confirm exact column names. Prisma never auto-converts camelCase to snake_case — only <code>@map("snake_case")</code> does that. Always verify the shape your service returns matches the TypeScript interface the frontend imports.
+      </div>
     </section>
 
     <footer class="footer">
