@@ -27,6 +27,8 @@ jobs:
     env:
       DEPLOY_PATH: ${{ vars.PRODUCTION_DEPLOY_PATH || secrets.PRODUCTION_DEPLOY_PATH || secrets.DEPLOY_PATH }}
       API_HEALTH_URL: ${{ vars.PRODUCTION_API_HEALTH_URL || secrets.PRODUCTION_API_HEALTH_URL }}
+      APP_URL: ${{ vars.PRODUCTION_APP_URL || secrets.PRODUCTION_APP_URL || '' }}
+      PUBLIC_API_URL: ${{ vars.PRODUCTION_API_URL || secrets.PRODUCTION_API_URL || '' }}
       REPO_URL: ${{ vars.PRODUCTION_REPO_URL || secrets.PRODUCTION_REPO_URL || format('{0}/{1}.git', github.server_url, github.repository) }}
     if: >-
       github.event_name == 'workflow_dispatch' ||
@@ -56,6 +58,11 @@ jobs:
           test -n "${{ secrets.DEPLOY_HOST }}" || { echo "::error::Missing secret DEPLOY_HOST"; exit 1; }
           test -n "${{ secrets.DEPLOY_USER }}" || { echo "::error::Missing secret DEPLOY_USER"; exit 1; }
           test -n "${{ secrets.DEPLOY_SSH_KEY }}" || { echo "::error::Missing secret DEPLOY_SSH_KEY"; exit 1; }
+          test -n "${{ secrets.POSTGRES_PASSWORD }}" || { echo "::error::Missing secret POSTGRES_PASSWORD"; exit 1; }
+          test -n "${{ secrets.MONGO_PASSWORD }}" || { echo "::error::Missing secret MONGO_PASSWORD"; exit 1; }
+          test -n "${{ secrets.REDIS_PASSWORD }}" || { echo "::error::Missing secret REDIS_PASSWORD"; exit 1; }
+          test -n "${{ secrets.JWT_SECRET }}" || { echo "::error::Missing secret JWT_SECRET"; exit 1; }
+          test -n "${{ secrets.JWT_REFRESH_SECRET }}" || { echo "::error::Missing secret JWT_REFRESH_SECRET"; exit 1; }
           test -n "${DEPLOY_PATH}" || { echo "::error::Missing deploy path. Set vars.PRODUCTION_DEPLOY_PATH or secrets.DEPLOY_PATH"; exit 1; }
           test -n "${API_HEALTH_URL}" || { echo "::error::Missing PRODUCTION_API_HEALTH_URL"; exit 1; }
           test -n "${REPO_URL}" || { echo "::error::Missing repository URL"; exit 1; }
@@ -64,6 +71,9 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
+          API_HEALTH_URL: ${{ env.API_HEALTH_URL }}
+          APP_URL: ${{ env.APP_URL }}
+          PUBLIC_API_URL: ${{ env.PUBLIC_API_URL }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           MONGO_PASSWORD: ${{ secrets.MONGO_PASSWORD }}
@@ -80,24 +90,42 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
           script_stop: true
-          envs: DEPLOY_PATH,POSTGRES_PASSWORD,REDIS_PASSWORD,MONGO_PASSWORD,JWT_SECRET,JWT_REFRESH_SECRET,SENDGRID_API_KEY,STRIPE_SECRET_KEY,OPENAI_API_KEY,BLOCKCHAIN_PRIVATE_KEY
+          envs: DEPLOY_PATH,API_HEALTH_URL,APP_URL,PUBLIC_API_URL,POSTGRES_PASSWORD,REDIS_PASSWORD,MONGO_PASSWORD,JWT_SECRET,JWT_REFRESH_SECRET,SENDGRID_API_KEY,STRIPE_SECRET_KEY,OPENAI_API_KEY,BLOCKCHAIN_PRIVATE_KEY
           script: |
             set -Eeuo pipefail
 
             mkdir -p "${DEPLOY_PATH}"
 
+            APP_BASE_URL="${APP_URL:-http://localhost:3000}"
+            if [ -n "${PUBLIC_API_URL:-}" ]; then
+              API_BASE_URL="${PUBLIC_API_URL}"
+            elif [ -n "${APP_URL:-}" ]; then
+              API_BASE_URL="${APP_URL%/}/api/v1"
+            else
+              API_BASE_URL="${API_HEALTH_URL%/health}"
+            fi
+            CORS_ORIGINS="${APP_BASE_URL}"
+
             cat <<EOF > "${DEPLOY_PATH}/.env"
             NODE_ENV=production
             PORT=3001
+            API_VERSION=v1
+            APP_URL=${APP_BASE_URL}
+            API_URL=${API_BASE_URL}
+            CORS_ORIGINS=${CORS_ORIGINS}
+            NEXT_PUBLIC_API_URL=${API_BASE_URL}
 
             POSTGRES_USER=crm_user
             POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
             POSTGRES_DB=crm_db
+            DATABASE_URL=postgresql://crm_user:${POSTGRES_PASSWORD}@postgres:5432/crm_db?schema=public
 
             REDIS_PASSWORD=${REDIS_PASSWORD}
+            REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
 
             MONGO_USER=crm_mongo
             MONGO_PASSWORD=${MONGO_PASSWORD}
+            MONGO_URI=mongodb://crm_mongo:${MONGO_PASSWORD}@mongodb:27017/crm_logs?authSource=admin
 
             JWT_SECRET=${JWT_SECRET}
             JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
@@ -105,11 +133,15 @@ jobs:
             SENDGRID_API_KEY=${SENDGRID_API_KEY}
 
             STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
-
-            OPENAI_API_KEY=${OPENAI_API_KEY}
-
-            BLOCKCHAIN_PRIVATE_KEY=${BLOCKCHAIN_PRIVATE_KEY}
             EOF
+
+            if [ -n "${OPENAI_API_KEY:-}" ]; then
+              echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> "${DEPLOY_PATH}/.env"
+            fi
+
+            if [ -n "${BLOCKCHAIN_PRIVATE_KEY:-}" ]; then
+              echo "BLOCKCHAIN_PRIVATE_KEY=${BLOCKCHAIN_PRIVATE_KEY}" >> "${DEPLOY_PATH}/.env"
+            fi
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -135,7 +167,7 @@ jobs:
               echo "[ERROR] Deployment failed on line $1"
               if [ -f "${DEPLOY_PATH}/docker-compose.prod.yml" ]; then
                 docker compose --env-file "${DEPLOY_PATH}/.env" -f "${DEPLOY_PATH}/docker-compose.prod.yml" ps || true
-                docker compose --env-file "${DEPLOY_PATH}/.env" -f "${DEPLOY_PATH}/docker-compose.prod.yml" logs --tail=100 api web nginx || true
+                docker compose --env-file "${DEPLOY_PATH}/.env" -f "${DEPLOY_PATH}/docker-compose.prod.yml" logs --tail=100 postgres redis mongodb api web nginx || true
               fi
             }
 
@@ -149,6 +181,7 @@ jobs:
             COMPOSE_FILE="${DEPLOY_PATH}/docker-compose.prod.yml"
             ENV_FILE="${DEPLOY_PATH}/.env"
             PARENT_DIR="$(dirname "${DEPLOY_PATH}")"
+            TMP_ENV_FILE="${PARENT_DIR}/.deploy-env.tmp"
 
             echo "[INFO] Starting deploy for ${DEPLOY_BRANCH} @ ${DEPLOY_SHA}"
             mkdir -p "${PARENT_DIR}"
@@ -156,13 +189,22 @@ jobs:
             if [ ! -d "${DEPLOY_PATH}/.git" ]; then
               mkdir -p "${DEPLOY_PATH}"
 
-              if [ -n "$(find "${DEPLOY_PATH}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+              if [ -f "${ENV_FILE}" ]; then
+                cp "${ENV_FILE}" "${TMP_ENV_FILE}"
+              fi
+
+              if [ -n "$(find "${DEPLOY_PATH}" -mindepth 1 -maxdepth 1 ! -name '.env' -print -quit 2>/dev/null)" ]; then
                 echo "[ERROR] ${DEPLOY_PATH} exists but is not a git repository. Refusing to overwrite existing files."
                 exit 1
               fi
 
+              rm -rf "${DEPLOY_PATH}"
               echo "[INFO] Repository not found. Cloning ${REPO_URL} into ${DEPLOY_PATH}"
               git clone --branch "${DEPLOY_BRANCH}" --single-branch "${REPO_URL}" "${DEPLOY_PATH}"
+
+              if [ -f "${TMP_ENV_FILE}" ]; then
+                mv "${TMP_ENV_FILE}" "${ENV_FILE}"
+              fi
             fi
 
             cd "${DEPLOY_PATH}"
@@ -176,6 +218,7 @@ jobs:
             git checkout "${DEPLOY_BRANCH}" || true
             git pull --ff-only origin "${DEPLOY_BRANCH}"
             git checkout --force "${DEPLOY_SHA}"
+            cp "${ENV_FILE}" "${DEPLOY_PATH}/crm-backend/.env"
 
             echo "[INFO] Stopping old containers..."
             docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" down --remove-orphans || true
@@ -185,7 +228,7 @@ jobs:
 
             echo "[INFO] Building and starting containers"
             docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build --pull api web
-            docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d postgres redis mongodb api web nginx
+            docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d postgres redis mongodb api
 
             echo "[INFO] Waiting for API health check"
             for attempt in $(seq 1 24); do
@@ -201,6 +244,9 @@ jobs:
 
               sleep 5
             done
+
+            echo "[INFO] Starting web and nginx"
+            docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d web nginx
 
             echo "[INFO] Deployment complete"
             docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps

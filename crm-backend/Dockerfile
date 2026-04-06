@@ -43,10 +43,11 @@ COPY --from=builder /app/prisma ./prisma
 # Run as a non-root user, but ensure the app directory remains readable/writable for Prisma/runtime needs.
 RUN addgroup --system --gid 1001 nodejs \
     && adduser --system --uid 1001 nestjs \
+    && mkdir -p /app/logs \
     && chown -R nestjs:nodejs /app
 
 USER nestjs
 
 EXPOSE 3001
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+CMD ["sh", "-c", "mkdir -p /app/logs && npx prisma migrate deploy && node dist/main"]
