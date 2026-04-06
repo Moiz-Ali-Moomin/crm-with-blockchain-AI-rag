@@ -3291,7 +3291,7 @@ prisma:query SELECT * FROM users WHERE id = 'user_100'  ← contact lookup #100
 const leads = await this.leadRepo.findAll();
 const enriched = await Promise.all(
   leads.map(async l => ({ ...l, assignee: await this.userRepo.findById(l.assigneeId) }))
-);</pre>
+);
         </div>
 
         <div class="section-block">
