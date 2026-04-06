@@ -7,7 +7,7 @@ version: '3.9'
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
 # All secrets come from the environment or a .env file in this directory.
-# Never commit real credentials — use GitHub Secrets / a secrets manager.
+# Never commit real credentials — use GitHub Secrets / a SECRETS manager.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
