@@ -33,179 +33,94 @@ defaults:
 
 jobs:
   backend-quality:
-    name: Backend Quality
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     defaults:
       run:
         working-directory: crm-backend
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: crm-backend/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund --prefer-offline
-
-      - name: Generate Prisma client
-        run: npx prisma generate
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Typecheck
-        run: npx tsc --noEmit
-
-      - name: Build
-        run: npm run build
-
-      - name: Upload npm logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-npm-logs
-          path: ~/.npm/_logs
-          if-no-files-found: ignore
-          retention-days: 7
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm run build
 
   backend-tests:
-    name: Backend Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     defaults:
       run:
         working-directory: crm-backend
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: crm-backend/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund --prefer-offline
-
-      - name: Generate Prisma client
-        run: npx prisma generate
-
-      - name: Run unit tests
-        run: npm run test:cov -- --passWithNoTests --runInBand
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run test:cov -- --passWithNoTests --runInBand
         env:
           NODE_ENV: test
 
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-coverage
-          path: crm-backend/coverage
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Upload npm logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-test-npm-logs
-          path: ~/.npm/_logs
-          if-no-files-found: ignore
-          retention-days: 7
-
   frontend-quality:
-    name: Frontend Quality
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     defaults:
       run:
         working-directory: crm-frontend
     env:
       NPM_CONFIG_LEGACY_PEER_DEPS: 'true'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: crm-frontend/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund --prefer-offline
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Typecheck
-        run: npx tsc --noEmit
-
-      - name: Build
-        run: npm run build
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:3001
 
-      - name: Upload npm logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-npm-logs
-          path: ~/.npm/_logs
-          if-no-files-found: ignore
-          retention-days: 7
-
   docker-validate:
-    name: Docker Validate (${{ matrix.service.name }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
     needs:
       - backend-quality
       - backend-tests
       - frontend-quality
     strategy:
-      fail-fast: false
       matrix:
         service:
           - name: backend
             context: ./crm-backend
-            tag: nexus-crm-api:ci
+            tag: crm-api:ci
             build-args: ''
           - name: frontend
             context: ./crm-frontend
-            tag: nexus-crm-web:ci
+            tag: crm-web:ci
             build-args: |
               NEXT_PUBLIC_API_URL=http://localhost:3001
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+      - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Build image
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v5
         with:
           context: ${{ matrix.service.context }}
           push: false
           tags: ${{ matrix.service.tag }}
           build-args: ${{ matrix.service.build-args }}
-          cache-from: type=gha,scope=${{ matrix.service.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}
