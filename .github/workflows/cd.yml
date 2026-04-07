@@ -51,6 +51,9 @@ jobs:
             echo "[INFO] Starting containers..."
             docker compose up -d
 
+            echo "[INFO] Waiting for API to be ready..."
+            sleep 15
+
             echo "[INFO] Running containers:"
             docker ps
 
