@@ -6,7 +6,7 @@
  * requesting the same endpoint share a single fetch per render.
  *
  * Revalidation tags allow targeted cache invalidation:
- *   revalidateTag('analytics') → clears all analytics cache entries
+ *   revalidateTag('analytics') → clears all analytics cache ENTRIES
  */
 
 import { cachedServerFetch } from '@/lib/api/server-client';
