@@ -1,12 +1,15 @@
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      <div className="w-full max-w-md px-4">
+    <div className="relative min-h-screen bg-[#F9FAFB] flex flex-col items-center justify-center px-4">
+      {/* Subtle top border accent */}
+      <div className="fixed top-0 left-0 right-0 h-0.5 bg-blue-600" />
+
+      <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 text-white">
-            <div className="w-10 h-10 rounded-xl bg-blue-500 flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <a href="/" className="inline-flex items-center gap-2.5 group">
+            <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm group-hover:bg-blue-700 transition-colors duration-200">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -15,11 +18,16 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
                 />
               </svg>
             </div>
-            <span className="text-2xl font-bold">CRM Platform</span>
-          </div>
-          <p className="text-slate-400 text-sm mt-2">Production-grade sales &amp; support platform</p>
+            <span className="text-xl font-bold text-slate-900 tracking-tight">CRM Platform</span>
+          </a>
         </div>
+
         {children}
+
+        {/* Footer */}
+        <p className="text-center text-xs text-gray-400 mt-8">
+          &copy; {new Date().getFullYear()} CRM Platform. All rights reserved.
+        </p>
       </div>
     </div>
   );

@@ -7,10 +7,6 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { authApi } from '@/lib/api/auth.api';
 import { useAuthStore } from '@/store/auth.store';
 
@@ -45,78 +41,119 @@ export default function LoginPage() {
   };
 
   return (
-    <Card className="bg-slate-800/50 border-slate-700 backdrop-blur">
-      <CardHeader>
-        <CardTitle className="text-white text-2xl">Sign in</CardTitle>
-        <CardDescription className="text-slate-400">
-          Enter your credentials to access your account
-        </CardDescription>
-      </CardHeader>
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email" className="text-slate-300">
-              Email
-            </Label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                className="pl-10 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500 focus-visible:ring-blue-500"
-                {...register('email')}
-              />
-            </div>
-            {errors.email && <p className="text-red-400 text-xs">{errors.email.message}</p>}
-          </div>
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm px-8 py-10">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Sign in to your account</h1>
+        <p className="text-sm text-gray-500 mt-1">Enter your credentials to continue</p>
+      </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="password" className="text-slate-300">
-                Password
-              </Label>
-              <Link href="/forgot-password" className="text-xs text-blue-400 hover:text-blue-300">
-                Forgot password?
-              </Link>
-            </div>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="••••••••"
-                className="pl-10 pr-10 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500 focus-visible:ring-blue-500"
-                {...register('password')}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300"
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-            {errors.password && <p className="text-red-400 text-xs">{errors.password.message}</p>}
+      <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
+        {/* Email */}
+        <div className="space-y-1.5">
+          <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+            Email address
+          </label>
+          <div className="relative">
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            <input
+              id="email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@company.com"
+              className={`w-full pl-10 pr-4 py-2.5 text-sm rounded-lg border bg-white text-gray-900 placeholder:text-gray-400
+                outline-none transition-all duration-150
+                focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 focus:border-blue-500
+                ${errors.email ? 'border-red-400 focus:ring-red-400 focus:border-red-400' : 'border-gray-300 hover:border-gray-400'}`}
+              {...register('email')}
+            />
           </div>
-        </CardContent>
+          {errors.email && (
+            <p className="text-xs text-red-500 mt-1">{errors.email.message}</p>
+          )}
+        </div>
 
-        <CardFooter className="flex flex-col gap-4">
-          <Button
-            type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700"
-            isLoading={isSubmitting}
-          >
-            Sign in
-          </Button>
-          <p className="text-sm text-slate-400 text-center">
-            Don&apos;t have an account?{' '}
-            <Link href="/register" className="text-blue-400 hover:text-blue-300 font-medium">
-              Create one
+        {/* Password */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              Password
+            </label>
+            <Link
+              href="/forgot-password"
+              className="text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors duration-150"
+            >
+              Forgot password?
             </Link>
-          </p>
-        </CardFooter>
+          </div>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            <input
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              placeholder="••••••••"
+              className={`w-full pl-10 pr-10 py-2.5 text-sm rounded-lg border bg-white text-gray-900 placeholder:text-gray-400
+                outline-none transition-all duration-150
+                focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 focus:border-blue-500
+                ${errors.password ? 'border-red-400 focus:ring-red-400 focus:border-red-400' : 'border-gray-300 hover:border-gray-400'}`}
+              {...register('password')}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors duration-150"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          {errors.password && (
+            <p className="text-xs text-red-500 mt-1">{errors.password.message}</p>
+          )}
+        </div>
+
+        {/* Submit */}
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="w-full py-2.5 px-4 mt-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400
+            text-white text-sm font-semibold rounded-lg
+            transition-colors duration-150
+            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+            flex items-center justify-center gap-2"
+        >
+          {isSubmitting ? (
+            <>
+              <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+              Signing in…
+            </>
+          ) : (
+            'Sign in'
+          )}
+        </button>
       </form>
-    </Card>
+
+      {/* Divider */}
+      <div className="relative my-6">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-gray-200" />
+        </div>
+      </div>
+
+      {/* Create account */}
+      <p className="text-center text-sm text-gray-500">
+        Don&apos;t have an account?{' '}
+        <Link
+          href="/register"
+          className="text-blue-600 hover:text-blue-700 font-semibold transition-colors duration-150"
+        >
+          Create account
+        </Link>
+      </p>
+    </div>
   );
 }
