@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import Link from "next/link"; // ✅ added
+import Link from "next/link";
 import { getDashboardMetrics } from '@/lib/api/server/analytics.server';
 import { StatCard } from '@/components/ui/stat-card';
 import { DashboardCharts } from './_components/dashboard-charts';
@@ -24,11 +24,11 @@ const MOCK_TASKS = [
 ] as const;
 
 const MOCK_ACTIVITY = [
-  { id: '1', user: 'James D.', initials: 'JD', action: 'closed deal',   entity: 'Acme Corp — $12,400',      time: '8m ago',  color: 'bg-emerald-500', bgColor: 'bg-emerald-50', textColor: 'text-emerald-700' },
-  { id: '2', user: 'Sara A.',  initials: 'SA', action: 'added contact', entity: 'John Smith @ TechStart',   time: '23m ago', color: 'bg-blue-500',    bgColor: 'bg-blue-50',    textColor: 'text-blue-700' },
-  { id: '3', user: 'Mike K.',  initials: 'MK', action: 'moved lead',    entity: 'GlobalTech → Qualified',   time: '1h ago',  color: 'bg-violet-500',  bgColor: 'bg-violet-50',  textColor: 'text-violet-700' },
-  { id: '4', user: 'James D.', initials: 'JD', action: 'sent email to', entity: 'Lisa Wang @ Vertex AI',    time: '2h ago',  color: 'bg-blue-500',    bgColor: 'bg-blue-50',    textColor: 'text-blue-700' },
-  { id: '5', user: 'Sara A.',  initials: 'SA', action: 'opened ticket', entity: 'Onboarding issue #TK-204', time: '3h ago',  color: 'bg-amber-500',   bgColor: 'bg-amber-50',   textColor: 'text-amber-700' },
+  { id: '1', user: 'James D.', initials: 'JD', action: 'closed deal',   entity: 'Acme Corp — $12,400',      time: '8m ago',  color: 'bg-emerald-500' },
+  { id: '2', user: 'Sara A.',  initials: 'SA', action: 'added contact', entity: 'John Smith @ TechStart',   time: '23m ago', color: 'bg-blue-500' },
+  { id: '3', user: 'Mike K.',  initials: 'MK', action: 'moved lead',    entity: 'GlobalTech → Qualified',   time: '1h ago',  color: 'bg-violet-500' },
+  { id: '4', user: 'James D.', initials: 'JD', action: 'sent email to', entity: 'Lisa Wang @ Vertex AI',    time: '2h ago',  color: 'bg-blue-500' },
+  { id: '5', user: 'Sara A.',  initials: 'SA', action: 'opened ticket', entity: 'Onboarding issue #TK-204', time: '3h ago',  color: 'bg-amber-500' },
 ] as const;
 
 const priorityStyles: Record<string, string> = {
@@ -37,7 +37,7 @@ const priorityStyles: Record<string, string> = {
   low:    'bg-gray-100 text-gray-500 border border-gray-200',
 };
 
-// ── Skeletons ─────────────────────────────────────────────────────────────────
+// ── Skeleton ──────────────────────────────────────────────────────────────────
 
 function ChartsSkeleton() {
   return (
@@ -46,14 +46,13 @@ function ChartsSkeleton() {
         <div
           key={i}
           className="h-[300px] bg-white border border-gray-200 animate-pulse rounded-xl"
-          style={{ animationDelay: `${i * 0.15}s` }}
         />
       ))}
     </div>
   );
 }
 
-// ── Section heading ───────────────────────────────────────────────────────────
+// ── Section header ────────────────────────────────────────────────────────────
 
 function SectionHeader({
   title,
@@ -69,97 +68,73 @@ function SectionHeader({
       </h2>
       {action && (
         <Link
-          href={action.href || '/'} // ✅ fixed
-          className="text-[11px] font-medium text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-0.5"
+          href={action.href || '/'}
+          className="text-[11px] font-medium text-blue-600 hover:text-blue-700 flex items-center gap-0.5"
         >
           {action.label}
-          <ArrowUpRight size={11} strokeWidth={2} />
+          <ArrowUpRight size={11} />
         </Link>
       )}
     </div>
   );
 }
 
-// ── Tasks list ────────────────────────────────────────────────────────────────
+// ── Tasks ─────────────────────────────────────────────────────────────────────
 
 function TasksList() {
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+      <div className="flex items-center justify-between px-5 py-4 border-b">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-blue-50">
-            <CheckSquare size={13} strokeWidth={2} className="text-blue-600" />
-          </div>
-          <span className="text-[13px] font-semibold text-gray-900">Tasks Due Today</span>
+          <CheckSquare size={13} className="text-blue-600" />
+          <span className="text-[13px] font-semibold">Tasks Due Today</span>
         </div>
-        <span className="text-[11px] text-gray-500 font-semibold bg-gray-100 px-2 py-0.5 rounded-full tabular-nums">
+        <span className="text-[11px] bg-gray-100 px-2 py-0.5 rounded-full">
           {MOCK_TASKS.length}
         </span>
       </div>
 
-      <div className="divide-y divide-gray-100">
+      <div className="divide-y">
         {MOCK_TASKS.map((task) => (
-          <div key={task.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 group cursor-pointer">
-            <div className="w-4 h-4 rounded border border-gray-300 group-hover:border-blue-400" />
-
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] text-gray-700 font-medium truncate group-hover:text-gray-900">
-                {task.title}
-              </p>
-              <div className="flex items-center gap-1 mt-0.5">
-                <Clock size={10} className="text-gray-400" />
-                <span className="text-[11px] text-gray-400">{task.due}</span>
+          <div key={task.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50">
+            <div className="w-4 h-4 rounded border" />
+            <div className="flex-1">
+              <p className="text-[13px] font-medium">{task.title}</p>
+              <div className="flex items-center gap-1 text-xs text-gray-400">
+                <Clock size={10} /> {task.due}
               </div>
             </div>
-
-            <div className="flex items-center gap-2">
-              <span className={cn('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded-full', priorityStyles[task.priority])}>
-                {task.priority}
-              </span>
-              <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[9px] font-bold text-gray-600">
-                {task.initials}
-              </div>
-            </div>
+            <span className={cn("text-[10px] px-2 py-0.5 rounded", priorityStyles[task.priority])}>
+              {task.priority}
+            </span>
           </div>
         ))}
-      </div>
-
-      <div className="px-5 py-3 border-t border-gray-100 bg-gray-50">
-        <Link href="/tasks" className="text-[12px] font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1">
-          View all tasks
-          <ArrowUpRight size={11} strokeWidth={2} />
-        </Link>
       </div>
     </div>
   );
 }
 
-// ── Activity feed ─────────────────────────────────────────────────────────────
+// ── Activity ──────────────────────────────────────────────────────────────────
 
 function ActivityFeed() {
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-        <span className="text-[13px] font-semibold text-gray-900">Recent Activity</span>
-        <Link href="/activities" className="text-[11px] font-medium text-blue-600 hover:text-blue-700 flex items-center gap-0.5">
-          View all
-          <ArrowUpRight size={11} strokeWidth={2} />
-        </Link>
+      <div className="px-5 py-4 border-b flex justify-between">
+        <span className="text-[13px] font-semibold">Recent Activity</span>
+        <Link href="/activities" className="text-xs text-blue-600">View all</Link>
       </div>
 
-      <div className="divide-y divide-gray-50">
+      <div className="divide-y">
         {MOCK_ACTIVITY.map((item) => (
-          <div key={item.id} className="flex items-start gap-3 px-5 py-3 hover:bg-gray-50 group">
-            <div className={cn('w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white', item.color)}>
+          <div key={item.id} className="flex gap-3 px-5 py-3">
+            <div className={`w-6 h-6 rounded-full text-white flex items-center justify-center ${item.color}`}>
               {item.initials}
             </div>
-
-            <div className="flex-1 min-w-0">
-              <p className="text-[12px] text-gray-600">
-                <span className="font-semibold text-gray-900">{item.user}</span> {item.action}{' '}
-                <span className="text-gray-500">{item.entity}</span>
+            <div>
+              <p className="text-xs">
+                <b>{item.user}</b> {item.action} {item.entity}
               </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">{item.time}</p>
+              <p className="text-[10px] text-gray-400">{item.time}</p>
             </div>
           </div>
         ))}
@@ -173,31 +148,54 @@ function ActivityFeed() {
 export default async function DashboardPage() {
   const metrics = await getDashboardMetrics();
 
-  const kpiCards = metrics
-    ? [
-        {
-          title: 'Total Leads',
-          value: metrics.totalLeads,
-          displayValue: metrics.totalLeads.toLocaleString(),
-          icon: <Users size={14} />,
-          gradient: 1 as const,
-        },
-      ]
-    : [];
+  const kpiCards = [
+    {
+      title: 'Total Leads',
+      value: metrics?.totalLeads ?? 0,
+      displayValue: (metrics?.totalLeads ?? 0).toLocaleString(),
+      icon: <Users size={14} />,
+      gradient: 1 as const,
+    },
+    {
+      title: 'Open Deals',
+      value: metrics?.openDeals ?? 0,
+      displayValue: (metrics?.openDeals ?? 0).toString(),
+      icon: <TrendingUp size={14} />,
+      gradient: 2 as const,
+    },
+    {
+      title: 'Revenue (MTD)',
+      value: metrics?.revenue ?? 0,
+      displayValue: formatCurrency(metrics?.revenue ?? 0),
+      icon: <DollarSign size={14} />,
+      gradient: 3 as const,
+    },
+    {
+      title: 'Conversion Rate',
+      value: metrics?.conversionRate ?? 0,
+      displayValue: `${metrics?.conversionRate ?? 0}%`,
+      icon: <Percent size={14} />,
+      gradient: 4 as const,
+    },
+  ];
 
   return (
     <div className="space-y-6">
+
+      {/* ✅ KEY METRICS */}
       <section>
         <SectionHeader title="Key Metrics" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {kpiCards.map((card, i) => (
             <StatCard key={i} {...card} />
           ))}
         </div>
       </section>
 
+      {/* ✅ PERFORMANCE + TASKS */}
       <section>
         <div className="grid grid-cols-1 xl:grid-cols-10 gap-4">
+
           <div className="xl:col-span-7">
             <SectionHeader title="Performance" action={{ label: 'Full report', href: '/analytics' }} />
             <Suspense fallback={<ChartsSkeleton />}>
@@ -210,6 +208,7 @@ export default async function DashboardPage() {
             <TasksList />
             <ActivityFeed />
           </div>
+
         </div>
       </section>
 
