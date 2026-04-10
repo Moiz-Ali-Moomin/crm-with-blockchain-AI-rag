@@ -49,10 +49,11 @@ function CheckoutContent() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [loading, setLoading] = useState<'stripe' | 'paypal' | null>(null);
 
-  // Redirect to login if not authenticated, preserving the plan param
+  // Redirect to login if not authenticated, preserving the checkout URL
   useEffect(() => {
     if (!isAuthenticated) {
-      router.replace(`/login?redirect=/checkout?plan=${planId}&billing=${billingCycle}`);
+      const returnTo = encodeURIComponent(`/checkout?plan=${planId}&billing=${billingCycle}`);
+      router.replace(`/login?redirect=${returnTo}`);
     }
   }, [isAuthenticated, planId, billingCycle, router]);
 

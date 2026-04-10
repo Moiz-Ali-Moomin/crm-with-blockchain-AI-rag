@@ -1,9 +1,9 @@
 'use client';
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
 import { toast } from 'sonner';
@@ -16,8 +16,9 @@ const loginSchema = z.object({
 });
 type LoginForm = z.infer<typeof loginSchema>;
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { setAuth } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
 
@@ -34,7 +35,8 @@ export default function LoginPage() {
       const result = await authApi.login(data.email, data.password);
       setAuth(result.user, result.accessToken);
       toast.success('Welcome back!');
-      router.push('/dashboard');
+      const redirect = searchParams.get('redirect');
+      router.push(redirect ?? '/dashboard');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Invalid email or password');
     }
@@ -155,5 +157,13 @@ export default function LoginPage() {
         </Link>
       </p>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }
