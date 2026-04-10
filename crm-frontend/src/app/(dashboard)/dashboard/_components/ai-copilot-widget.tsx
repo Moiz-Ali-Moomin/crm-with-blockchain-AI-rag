@@ -76,13 +76,13 @@ function ResponseBlock({ data, op }: { data: AiResponse; op: OperationType }) {
     return (
       <div className="space-y-3">
         {data.summary && (
-          <p className="text-sm text-gray-300 leading-relaxed">{data.summary}</p>
+          <p className="text-sm text-gray-700 leading-relaxed">{data.summary}</p>
         )}
         {data.keyPoints?.length ? (
           <ul className="space-y-1.5">
             {data.keyPoints.map((pt, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-gray-400">
-                <span className="mt-2 w-1 h-1 rounded-full bg-blue-400 shrink-0" />
+              <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
+                <span className="mt-2 w-1 h-1 rounded-full bg-blue-500 shrink-0" />
                 {pt}
               </li>
             ))}
@@ -91,9 +91,9 @@ function ResponseBlock({ data, op }: { data: AiResponse; op: OperationType }) {
         {data.sentiment && (
           <span className={cn(
             'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold uppercase tracking-wide',
-            data.sentiment === 'positive' ? 'bg-emerald-500/15 text-emerald-400' :
-            data.sentiment === 'negative' ? 'bg-rose-500/15 text-rose-400' :
-            'bg-gray-500/20 text-gray-400',
+            data.sentiment === 'positive' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
+            data.sentiment === 'negative' ? 'bg-rose-50 text-rose-600 border border-rose-200' :
+            'bg-gray-100 text-gray-500 border border-gray-200',
           )}>
             {data.sentiment}
           </span>
@@ -105,21 +105,21 @@ function ResponseBlock({ data, op }: { data: AiResponse; op: OperationType }) {
   if (op === 'suggest_follow_up') {
     return (
       <div className="space-y-2">
-        {data.action    && <p className="text-sm font-semibold text-white">{data.action}</p>}
-        {data.reasoning && <p className="text-sm text-gray-400 leading-relaxed">{data.reasoning}</p>}
+        {data.action    && <p className="text-sm font-semibold text-gray-900">{data.action}</p>}
+        {data.reasoning && <p className="text-sm text-gray-600 leading-relaxed">{data.reasoning}</p>}
         <div className="flex flex-wrap gap-2 pt-1">
           {data.urgency && (
             <span className={cn(
               'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold uppercase tracking-wide',
-              data.urgency === 'high'   ? 'bg-rose-500/15 text-rose-400' :
-              data.urgency === 'medium' ? 'bg-amber-500/15 text-amber-400' :
-              'bg-gray-500/20 text-gray-400',
+              data.urgency === 'high'   ? 'bg-rose-50 text-rose-600 border border-rose-200' :
+              data.urgency === 'medium' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
+              'bg-gray-100 text-gray-500 border border-gray-200',
             )}>
               {data.urgency} urgency
             </span>
           )}
           {data.suggestedChannel && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold uppercase tracking-wide bg-blue-500/15 text-blue-400">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold uppercase tracking-wide bg-blue-50 text-blue-600 border border-blue-200">
               {data.suggestedChannel}
             </span>
           )}
@@ -131,12 +131,12 @@ function ResponseBlock({ data, op }: { data: AiResponse; op: OperationType }) {
   if (op === 'summarize_activity') {
     return (
       <div className="space-y-2">
-        {data.summary      && <p className="text-sm text-gray-300 leading-relaxed">{data.summary}</p>}
-        {data.lastActivity && <p className="text-xs text-gray-500">Last: {data.lastActivity}</p>}
+        {data.summary      && <p className="text-sm text-gray-700 leading-relaxed">{data.summary}</p>}
+        {data.lastActivity && <p className="text-xs text-gray-400">Last: {data.lastActivity}</p>}
         {data.nextStep && (
-          <div className="bg-blue-500/8 border border-blue-500/15 rounded-lg px-3 py-2 mt-2">
-            <p className="text-xs font-semibold text-blue-400 mb-0.5">Next step</p>
-            <p className="text-sm text-gray-300">{data.nextStep}</p>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mt-2">
+            <p className="text-xs font-semibold text-blue-600 mb-0.5">Next step</p>
+            <p className="text-sm text-gray-700">{data.nextStep}</p>
           </div>
         )}
       </div>
@@ -148,18 +148,18 @@ function ResponseBlock({ data, op }: { data: AiResponse; op: OperationType }) {
       <div className="space-y-3">
         {data.subject && (
           <div>
-            <p className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Subject</p>
-            <p className="text-sm font-semibold text-white">{data.subject}</p>
+            <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-1">Subject</p>
+            <p className="text-sm font-semibold text-gray-900">{data.subject}</p>
           </div>
         )}
         {data.body && (
           <div>
-            <p className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Body</p>
-            <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">{data.body}</p>
+            <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-1">Body</p>
+            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{data.body}</p>
           </div>
         )}
         {data.tone && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold uppercase tracking-wide bg-emerald-500/15 text-emerald-400">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold uppercase tracking-wide bg-emerald-50 text-emerald-600 border border-emerald-200">
             {data.tone}
           </span>
         )}
@@ -167,7 +167,7 @@ function ResponseBlock({ data, op }: { data: AiResponse; op: OperationType }) {
     );
   }
 
-  return <pre className="text-xs text-gray-400 whitespace-pre-wrap">{JSON.stringify(data, null, 2)}</pre>;
+  return <pre className="text-xs text-gray-500 whitespace-pre-wrap">{JSON.stringify(data, null, 2)}</pre>;
 }
 
 // ── Core widget panel ─────────────────────────────────────────────────────────
@@ -210,19 +210,19 @@ export function AiCopilotWidget() {
   }
 
   return (
-    <div className="bg-[#1f2937] border border-gray-700/60 rounded-xl flex flex-col h-full">
+    <div className="bg-white border border-gray-200 rounded-xl flex flex-col h-full shadow-sm">
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-gray-700/60">
-        <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400">
+      <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-gray-100">
+        <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
           <Brain size={15} strokeWidth={2} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-white leading-none">AI Copilot</p>
-          <p className="text-[11px] text-gray-500 mt-0.5">Powered by GPT-4o</p>
+          <p className="text-sm font-semibold text-gray-900 leading-none">AI Copilot</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">Powered by GPT-4o</p>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-[11px] text-gray-500">Ready</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-[11px] text-gray-400">Ready</span>
         </div>
       </div>
 
@@ -233,17 +233,17 @@ export function AiCopilotWidget() {
             onClick={() => setOpOpen((o) => !o)}
             className={cn(
               'w-full flex items-center justify-between px-3 py-2.5 rounded-lg',
-              'bg-gray-800/60 border border-gray-700/60 hover:border-gray-600',
+              'bg-gray-50 border border-gray-200 hover:border-gray-300',
               'transition-colors duration-150 text-left',
             )}
           >
             <div className="min-w-0">
-              <p className="text-[13px] font-medium text-white">{currentOp.label}</p>
-              <p className="text-[11px] text-gray-500 mt-0.5 truncate">{currentOp.description}</p>
+              <p className="text-[13px] font-medium text-gray-900">{currentOp.label}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5 truncate">{currentOp.description}</p>
             </div>
             <ChevronDown
               size={14}
-              className={cn('text-gray-500 transition-transform duration-200 shrink-0 ml-3', opOpen && 'rotate-180')}
+              className={cn('text-gray-400 transition-transform duration-200 shrink-0 ml-3', opOpen && 'rotate-180')}
             />
           </button>
 
@@ -253,7 +253,7 @@ export function AiCopilotWidget() {
                 initial={{ opacity: 0, y: -6, scale: 0.97 }}
                 animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.13 } }}
                 exit={{ opacity: 0, y: -4, transition: { duration: 0.10 } }}
-                className="absolute left-0 right-0 top-[calc(100%+4px)] bg-[#111827] border border-gray-700/60 rounded-xl overflow-hidden z-20 shadow-xl"
+                className="absolute left-0 right-0 top-[calc(100%+4px)] bg-white border border-gray-200 rounded-xl overflow-hidden z-20 shadow-lg"
               >
                 {OPERATIONS.map((op) => (
                   <button
@@ -261,16 +261,16 @@ export function AiCopilotWidget() {
                     onClick={() => { setActiveOp(op.key); setOpOpen(false); setResult(null); setInput(''); }}
                     className={cn(
                       'w-full flex items-start gap-2.5 px-3 py-2.5 text-left',
-                      'hover:bg-gray-800/60 transition-colors duration-100',
-                      op.key === activeOp && 'bg-blue-500/8',
+                      'hover:bg-gray-50 transition-colors duration-100',
+                      op.key === activeOp && 'bg-blue-50',
                     )}
                   >
                     {op.key === activeOp && (
-                      <span className="mt-2 w-1 h-1 rounded-full bg-blue-400 shrink-0" />
+                      <span className="mt-2 w-1 h-1 rounded-full bg-blue-500 shrink-0" />
                     )}
                     <div>
-                      <p className="text-[13px] font-medium text-white">{op.label}</p>
-                      <p className="text-[11px] text-gray-500 mt-0.5">{op.description}</p>
+                      <p className="text-[13px] font-medium text-gray-900">{op.label}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{op.description}</p>
                     </div>
                   </button>
                 ))}
@@ -284,8 +284,8 @@ export function AiCopilotWidget() {
       <form onSubmit={handleSubmit} className="px-5 pb-4">
         <div className={cn(
           'flex items-center gap-2 px-3 py-2 rounded-lg',
-          'bg-gray-800/60 border border-gray-700/60',
-          'focus-within:border-blue-500/50 focus-within:bg-gray-800',
+          'bg-gray-50 border border-gray-200',
+          'focus-within:border-blue-400 focus-within:bg-white',
           'transition-colors duration-150',
         )}>
           <input
@@ -294,7 +294,7 @@ export function AiCopilotWidget() {
             onChange={(e) => setInput(e.target.value)}
             placeholder={currentOp.placeholder}
             disabled={isPending}
-            className="flex-1 bg-transparent text-[13px] text-white placeholder:text-gray-600 outline-none disabled:opacity-50"
+            className="flex-1 bg-transparent text-[13px] text-gray-900 placeholder:text-gray-400 outline-none disabled:opacity-50"
           />
           <button
             type="submit"
@@ -315,7 +315,7 @@ export function AiCopilotWidget() {
       </form>
 
       {/* Divider */}
-      <div className="h-px bg-gray-700/60 mx-5" />
+      <div className="h-px bg-gray-100 mx-5" />
 
       {/* Response area */}
       <div className="flex-1 overflow-y-auto px-5 py-4 min-h-[160px]">
@@ -328,8 +328,8 @@ export function AiCopilotWidget() {
               exit={{ opacity: 0 }}
               className="flex flex-col items-center justify-center h-full gap-2.5 py-8"
             >
-              <Loader2 size={20} className="text-blue-400 animate-spin" />
-              <p className="text-xs text-gray-500">Generating response…</p>
+              <Loader2 size={20} className="text-blue-500 animate-spin" />
+              <p className="text-xs text-gray-400">Generating response…</p>
             </motion.div>
           ) : error ? (
             <motion.div
@@ -337,10 +337,10 @@ export function AiCopilotWidget() {
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="flex items-start gap-2 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20"
+              className="flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-200"
             >
-              <span className="text-rose-400 mt-0.5">⚠</span>
-              <p className="text-sm text-rose-300">{error}</p>
+              <span className="text-rose-500 mt-0.5">⚠</span>
+              <p className="text-sm text-rose-600">{error}</p>
             </motion.div>
           ) : result ? (
             <motion.div
@@ -350,8 +350,8 @@ export function AiCopilotWidget() {
               exit={{ opacity: 0 }}
             >
               <div className="flex items-center gap-1.5 mb-3">
-                <Sparkles size={12} className="text-blue-400" />
-                <span className="text-[11px] font-semibold text-blue-400 uppercase tracking-wider">
+                <Sparkles size={12} className="text-blue-500" />
+                <span className="text-[11px] font-semibold text-blue-500 uppercase tracking-wider">
                   AI Response
                 </span>
               </div>
@@ -364,9 +364,9 @@ export function AiCopilotWidget() {
               animate={{ opacity: 1 }}
               className="flex flex-col items-center justify-center h-full gap-2 py-10 text-center"
             >
-              <Brain size={26} className="text-gray-700" strokeWidth={1.2} />
+              <Brain size={26} className="text-gray-300" strokeWidth={1.2} />
               <p className="text-sm text-gray-500">Select an operation and enter an ID</p>
-              <p className="text-[11px] text-gray-600">AI will analyze your CRM data</p>
+              <p className="text-[11px] text-gray-400">AI will analyze your CRM data</p>
             </motion.div>
           )}
         </AnimatePresence>

@@ -13,7 +13,7 @@ import {
 import Stripe from 'stripe';
 import axios from 'axios';
 import { BillingRepository } from './billing.repository';
-import { CreateCheckoutSessionDto, CreatePayPalSubscriptionDto } from './billing.dto';
+import { CreateCheckoutSessionDto, CreatePayPalSubscriptionDto, CreateCryptoPaymentDto } from './billing.dto';
 
 const STRIPE_PLAN_PRICE_MAP: Record<string, string | undefined> = {
   free: process.env.STRIPE_PRICE_FREE,
@@ -544,5 +544,59 @@ export class BillingService {
 
     const entry = Object.entries(STRIPE_PLAN_PRICE_MAP).find(([, id]) => id === priceId);
     return entry ? entry[0] : 'pro';
+  }
+
+  // ─── Crypto Payment ───────────────────────────────────────────────────────
+
+  async createCryptoPayment(tenantId: string, dto: CreateCryptoPaymentDto) {
+    const plan = PLANS.find((p) => p.id === dto.planId);
+    if (!plan || plan.price === 0) {
+      throw new BusinessRuleError('Invalid plan for crypto payment');
+    }
+
+    const walletAddress = process.env.CRYPTO_WALLET_ADDRESS;
+    if (!walletAddress) {
+      throw new ExternalServiceError('Crypto payments not configured — wallet address missing');
+    }
+
+    // Annual billing = 12 months × 80% (20% discount)
+    const monthlyUsd = plan.price;
+    const totalUsd = dto.billingCycle === 'annual'
+      ? Math.round(monthlyUsd * 12 * 0.8 * 100) / 100
+      : monthlyUsd;
+
+    // Fetch live ETH price in USD from CoinGecko (public API, no key needed)
+    let ethPriceUsd = 3000; // fallback
+    try {
+      const { data } = await axios.get(
+        'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
+        { timeout: 4000 },
+      );
+      ethPriceUsd = data?.ethereum?.usd ?? 3000;
+    } catch {
+      this.logger.warn('Could not fetch live ETH price, using fallback $3000');
+    }
+
+    // Amount to send
+    const cryptoAmount = dto.currency === 'ETH'
+      ? (totalUsd / ethPriceUsd).toFixed(6)
+      : totalUsd.toFixed(2); // stablecoins are 1:1 with USD
+
+    // Generate a unique payment reference so we can match the tx
+    const paymentRef = `CRM-${tenantId.slice(0, 8).toUpperCase()}-${Date.now()}`;
+
+    return {
+      walletAddress,
+      currency: dto.currency,
+      amount: cryptoAmount,
+      amountUsd: totalUsd,
+      planId: dto.planId,
+      planName: plan.name,
+      billingCycle: dto.billingCycle,
+      paymentRef,
+      // Instruct user to include paymentRef in tx memo/data field
+      instructions: `Send exactly ${cryptoAmount} ${dto.currency} to the wallet address above. Include "${paymentRef}" in the transaction memo/data field so we can identify your payment.`,
+      ethPriceUsd: dto.currency === 'ETH' ? ethPriceUsd : null,
+    };
   }
 }

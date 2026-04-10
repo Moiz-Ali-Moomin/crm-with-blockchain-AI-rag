@@ -56,9 +56,9 @@ function PaymentMethodModal({ plan, onClose }: PaymentModalProps) {
     setLoading('stripe');
     try {
       const { url } = await billingApi.createCheckoutSession({
-        plan: plan.id,
+        planId: plan.id,
         successUrl: billingUrl,
-        cancelUrl: billingUrl,
+        returnUrl: billingUrl,
       });
       window.location.href = url;
     } catch (err: any) {
@@ -71,7 +71,7 @@ function PaymentMethodModal({ plan, onClose }: PaymentModalProps) {
     setLoading('paypal');
     try {
       const { approvalUrl } = await billingApi.createPayPalSubscription({
-        plan: plan.id,
+        planId: plan.id,
         returnUrl: billingUrl,
         cancelUrl: billingUrl,
       });

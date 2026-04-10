@@ -47,6 +47,19 @@ export interface PayPalSubscription {
   approvalUrl: string;
 }
 
+export interface CryptoPayment {
+  walletAddress: string;
+  currency: string;
+  amount: string;
+  amountUsd: number;
+  planId: string;
+  planName: string;
+  billingCycle: string;
+  paymentRef: string;
+  instructions: string;
+  ethPriceUsd: number | null;
+}
+
 export const billingApi = {
   getInfo: () => apiGet<BillingInfo>('/billing'),
 
@@ -54,20 +67,28 @@ export const billingApi = {
 
   getInvoices: () => apiGet<Invoice[]>('/billing/invoices'),
 
+  // Backend expects: planId, successUrl, returnUrl
   createCheckoutSession: (data: {
-    plan: string;
+    planId: string;
     successUrl: string;
-    cancelUrl: string;
+    returnUrl: string;
   }) => apiPost<CheckoutSession>('/billing/checkout', data),
 
   cancelSubscription: () => apiPost<{ message: string }>('/billing/cancel'),
 
+  // Backend expects: planId, returnUrl, cancelUrl
   createPayPalSubscription: (data: {
-    plan: string;
+    planId: string;
     returnUrl: string;
     cancelUrl: string;
   }) => apiPost<PayPalSubscription>('/billing/paypal/subscribe', data),
 
   cancelPayPalSubscription: () =>
     apiPost<{ message: string }>('/billing/paypal/cancel'),
+
+  createCryptoPayment: (data: {
+    planId: string;
+    currency: 'ETH' | 'USDC' | 'USDT' | 'DAI';
+    billingCycle: 'monthly' | 'annual';
+  }) => apiPost<CryptoPayment>('/billing/crypto/create', data),
 };

@@ -31,6 +31,8 @@ import {
   CreateCheckoutSessionDto,
   CreatePayPalSubscriptionSchema,
   CreatePayPalSubscriptionDto,
+  CreateCryptoPaymentSchema,
+  CreateCryptoPaymentDto,
 } from './billing.dto';
 
 @ApiTags('billing')
@@ -97,6 +99,17 @@ export class BillingController {
   @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
   cancelPayPalSubscription(@CurrentUser() user: JwtUser) {
     return this.service.cancelPayPalSubscription(user.tenantId);
+  }
+
+  // ─── Crypto ───────────────────────────────────────────────────────────────
+
+  @Post('crypto/create')
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  createCryptoPayment(
+    @CurrentUser() user: JwtUser,
+    @Body(new ZodValidationPipe(CreateCryptoPaymentSchema)) dto: CreateCryptoPaymentDto,
+  ) {
+    return this.service.createCryptoPayment(user.tenantId, dto);
   }
 
   @Post('paypal/webhook')

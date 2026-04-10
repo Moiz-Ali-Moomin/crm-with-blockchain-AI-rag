@@ -4,6 +4,7 @@ import { getDashboardMetrics } from '@/lib/api/server/analytics.server';
 import { StatCard } from '@/components/ui/stat-card';
 import { DashboardCharts } from './_components/dashboard-charts';
 import { FloatingAiCopilot } from './_components/ai-copilot-widget';
+import { UpgradeBanner } from './_components/upgrade-banner';
 import {
   Users, TrendingUp, DollarSign, Percent,
   Clock, CheckSquare, ArrowUpRight,
@@ -184,6 +185,9 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
+
+      {/* UPGRADE BANNER — only visible for free plan users */}
+      <UpgradeBanner />
 
       {/* KEY METRICS */}
       <section>
