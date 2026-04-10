@@ -13,8 +13,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import BillingPage from './billing/page';
 
-const TABS = ['Profile', 'Security'] as const;
+const TABS = ['Profile', 'Security', 'Billing'] as const;
 type Tab = (typeof TABS)[number];
 
 const profileSchema = z.object({
@@ -107,7 +108,7 @@ export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('Profile');
 
   return (
-    <div className="space-y-4 max-w-2xl">
+    <div className="space-y-4 max-w-4xl">
       <div className="border-b border-slate-200 dark:border-slate-700">
         <div className="flex">
           {TABS.map((t) => (
@@ -115,13 +116,18 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">{tab}</CardTitle></CardHeader>
-        <CardContent>
-          {tab === 'Profile' && <ProfileTab />}
-          {tab === 'Security' && <SecurityTab />}
-        </CardContent>
-      </Card>
+
+      {tab === 'Billing' ? (
+        <BillingPage />
+      ) : (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">{tab}</CardTitle></CardHeader>
+          <CardContent>
+            {tab === 'Profile' && <ProfileTab />}
+            {tab === 'Security' && <SecurityTab />}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
