@@ -8,7 +8,6 @@ export class AuthRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async findByEmail(email: string) {
-    // Auth queries bypass tenant scope (email is unique across tenants)
     return this.prisma.withoutTenantScope(() =>
       this.prisma.user.findFirst({
         where: { email },
@@ -29,23 +28,45 @@ export class AuthRepository {
     );
   }
 
-  async updateRefreshToken(userId: string, hash: string) {
+  // ── Per-session Refresh Token Methods ──────────────────────────────────────
+
+  async createRefreshSession(
+    userId: string,
+    tenantId: string,
+    tokenHash: string,
+    expiresAt: Date,
+  ) {
     return this.prisma.withoutTenantScope(() =>
-      this.prisma.user.update({
-        where: { id: userId },
-        data: { refreshTokenHash: hash },
+      this.prisma.refreshSession.create({
+        data: { userId, tenantId, tokenHash, expiresAt },
       }),
     );
   }
 
-  async clearRefreshToken(userId: string) {
+  /**
+   * Atomically finds a refresh session by SHA-256 token hash and deletes it
+   * (rotation — caller must issue a new token). Returns the owning user, or
+   * null if no session matched (reuse-detection signal to caller).
+   */
+  async consumeRefreshSession(tokenHash: string) {
+    return this.prisma.withoutTenantScope(async () => {
+      const session = await this.prisma.refreshSession.findUnique({
+        where: { tokenHash },
+        include: { user: true },
+      });
+      if (!session) return null;
+      await this.prisma.refreshSession.delete({ where: { tokenHash } });
+      return session.user;
+    });
+  }
+
+  async deleteAllRefreshSessions(userId: string) {
     return this.prisma.withoutTenantScope(() =>
-      this.prisma.user.update({
-        where: { id: userId },
-        data: { refreshTokenHash: null },
-      }),
+      this.prisma.refreshSession.deleteMany({ where: { userId } }),
     );
   }
+
+  // ── Other Auth Methods ─────────────────────────────────────────────────────
 
   async updateLastLogin(userId: string) {
     return this.prisma.withoutTenantScope(() =>
@@ -56,20 +77,24 @@ export class AuthRepository {
     );
   }
 
+  /**
+   * Updates only the passwordHash field. Does NOT touch settings so other
+   * user preferences (theme, flags, etc.) are never wiped.
+   */
   async updatePassword(userId: string, passwordHash: string) {
     return this.prisma.withoutTenantScope(() =>
       this.prisma.user.update({
         where: { id: userId },
-        data: { passwordHash, settings: {} }, // Clear passwordResetTokenHash stored in settings
+        data: { passwordHash },
       }),
     );
   }
 
   async createPasswordResetToken(userId: string): Promise<string> {
     const token = randomBytes(32).toString('hex');
-    // Store SHA-256 hash — raw token is never persisted (same pattern as refresh tokens)
+    // Store SHA-256 hash — raw token is never persisted
     const tokenHash = createHash('sha256').update(token).digest('hex');
-    const expiresAt = addHours(new Date(), 1); // 1 hour expiry
+    const expiresAt = addHours(new Date(), 1);
 
     await this.prisma.withoutTenantScope(() =>
       this.prisma.user.update({
@@ -83,30 +108,32 @@ export class AuthRepository {
       }),
     );
 
-    return token; // Return raw token — goes into the email link, never stored
+    return token;
   }
 
-  async findByResetToken(token: string) {
-    const tokenHash = createHash('sha256').update(token).digest('hex');
-    const users = await this.prisma.withoutTenantScope(() =>
-      this.prisma.user.findMany({
-        where: {
-          settings: {
-            path: ['passwordResetTokenHash'],
-            equals: tokenHash,
-          },
-        },
-      }),
-    );
+  /**
+   * Atomically validates the reset token AND updates the password in a single
+   * UPDATE … WHERE … RETURNING statement. Prevents race conditions where two
+   * concurrent requests both pass the token-validity check before either clears
+   * the token.
+   *
+   * Returns { id } of the updated user, or null if the token was invalid/expired.
+   */
+  async resetPasswordAtomic(
+    rawToken: string,
+    passwordHash: string,
+  ): Promise<{ id: string } | null> {
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
 
-    const user = users[0];
-    if (!user) return null;
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      UPDATE users
+      SET    "passwordHash" = ${passwordHash},
+             settings       = settings - 'passwordResetTokenHash' - 'passwordResetExpires'
+      WHERE  settings->>'passwordResetTokenHash' = ${tokenHash}
+        AND  (settings->>'passwordResetExpires')::timestamptz > NOW()
+      RETURNING id
+    `;
 
-    const settings = user.settings as Record<string, string>;
-    const expires = new Date(settings.passwordResetExpires);
-
-    if (expires < new Date()) return null; // Token expired
-
-    return user;
+    return rows[0] ?? null;
   }
 }

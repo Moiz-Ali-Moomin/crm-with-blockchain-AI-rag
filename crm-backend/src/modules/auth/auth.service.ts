@@ -3,10 +3,12 @@
  *
  * Token strategy:
  * - Access token: 15min JWT, contains userId/tenantId/role
- * - Refresh token: 7day JWT, stored as bcrypt hash in DB
- * - Refresh token rotation: each use issues a NEW token and invalidates old one
- * - Reuse detection: if a used token is re-submitted, ALL sessions are invalidated
- * - Logout: access token added to Redis blacklist (until natural expiry)
+ * - Refresh token: 7day JWT, SHA-256 hash stored in refresh_sessions table
+ * - Per-session storage: each login creates an independent session row;
+ *   multiple devices can be active simultaneously
+ * - Refresh token rotation: each use deletes the old session and issues a new one
+ * - Reuse detection: if a rotated token is re-submitted, ALL sessions are invalidated
+ * - Logout: access token added to Redis blacklist; current session deleted from DB
  */
 
 import { Injectable } from '@nestjs/common';
@@ -20,6 +22,8 @@ import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
+import { addDays } from 'date-fns';
 import { AuthRepository } from './auth.repository';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { PrismaTransactionService } from '../../core/database/prisma-transaction.service';
@@ -45,10 +49,10 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
-    // Check slug uniqueness
     const existingTenant = await this.authRepo.findTenantBySlug(dto.organizationSlug);
     if (existingTenant) {
-      throw new ConflictError('An organization with this slug already exists');
+      // Generic error — do not reveal whether the slug exists (prevents tenant enumeration)
+      throw new ConflictError('Registration failed. Please try a different organization name.');
     }
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
@@ -125,7 +129,6 @@ export class AuthService {
 
     const tokens = await this.generateTokens(user.id, user.email, user.tenantId, user.role);
 
-    // Update last login timestamp
     await this.authRepo.updateLastLogin(user.id);
 
     return {
@@ -136,32 +139,33 @@ export class AuthService {
   }
 
   async refreshTokens(userId: string, refreshToken: string) {
-    const user = await this.authRepo.findById(userId);
+    // SHA-256 hash for fast indexed lookup (JWTs have sufficient entropy; bcrypt not needed here)
+    const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
 
-    if (!user || !user.refreshTokenHash) {
-      throw new UnauthorizedError('Access denied - no active session');
+    const user = await this.authRepo.consumeRefreshSession(tokenHash);
+
+    if (!user) {
+      // No session found — this token was already rotated. Possible replay attack:
+      // invalidate ALL sessions for this user as a precaution.
+      await this.authRepo.deleteAllRefreshSessions(userId);
+      throw new UnauthorizedError('Session expired or refresh token reuse detected. Please log in again.');
     }
 
-    const tokenMatches = await bcrypt.compare(refreshToken, user.refreshTokenHash);
-
-    if (!tokenMatches) {
-      // Refresh token reuse detected - invalidate ALL sessions
-      await this.authRepo.clearRefreshToken(userId);
-      throw new UnauthorizedError(
-        'Refresh token reuse detected. All sessions have been invalidated.',
-      );
+    // Extra integrity check: JWT sub must match the session owner
+    if (user.id !== userId) {
+      await this.authRepo.deleteAllRefreshSessions(userId);
+      throw new UnauthorizedError('Token/session mismatch. All sessions invalidated.');
     }
 
-    const tokens = await this.generateTokens(user.id, user.email, user.tenantId, user.role);
-    return tokens;
+    return this.generateTokens(user.id, user.email, user.tenantId, user.role);
   }
 
   async logout(userId: string, accessToken: string) {
     // Blacklist the access token in Redis until it naturally expires
     await this.blacklist.add(accessToken);
 
-    // Clear refresh token from DB
-    await this.authRepo.clearRefreshToken(userId);
+    // Delete all refresh sessions for this user (sign out everywhere)
+    await this.authRepo.deleteAllRefreshSessions(userId);
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
@@ -172,9 +176,14 @@ export class AuthService {
 
     const resetToken = await this.authRepo.createPasswordResetToken(user.id);
 
-    const resetLink = `${this.config.get('APP_URL', 'http://localhost:3000')}/reset-password?token=${resetToken}`;
+    // Use URL constructor to safely compose the link — prevents header/HTML injection
+    // if APP_URL is misconfigured in lower environments
+    const appUrl = this.config.get('APP_URL', 'http://localhost:3000');
+    const resetUrl = new URL('/reset-password', appUrl);
+    resetUrl.searchParams.set('token', resetToken);
+    const resetLink = resetUrl.toString();
 
-    // Enqueue password-reset email — fire-and-forget (response must not depend on SendGrid)
+    // Enqueue password-reset email — fire-and-forget
     this.emailQueue
       .add(
         'password-reset',
@@ -192,17 +201,18 @@ export class AuthService {
   }
 
   async resetPassword(dto: ResetPasswordDto) {
-    const user = await this.authRepo.findByResetToken(dto.token);
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+
+    // Single atomic UPDATE: validates token hash + expiry and clears token fields
+    // in one statement — prevents race conditions on concurrent reset requests
+    const user = await this.authRepo.resetPasswordAtomic(dto.token, passwordHash);
 
     if (!user) {
       throw new BusinessRuleError('Invalid or expired password reset token');
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-    await this.authRepo.updatePassword(user.id, passwordHash);
-
     // Invalidate all existing sessions after password change
-    await this.authRepo.clearRefreshToken(user.id);
+    await this.authRepo.deleteAllRefreshSessions(user.id);
 
     return { message: 'Password reset successfully. Please log in.' };
   }
@@ -217,6 +227,11 @@ export class AuthService {
   ) {
     const payload = { sub: userId, email, tenantId, role };
 
+    const refreshExpiryDays = parseInt(
+      this.config.get<string>('JWT_REFRESH_EXPIRES_DAYS', '7'),
+      10,
+    );
+
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
         secret: this.config.get<string>('JWT_SECRET'),
@@ -228,15 +243,16 @@ export class AuthService {
       }),
     ]);
 
-    // Store hashed refresh token in DB
-    const refreshTokenHash = await bcrypt.hash(refreshToken, BCRYPT_ROUNDS);
-    await this.authRepo.updateRefreshToken(userId, refreshTokenHash);
+    // Store SHA-256 hash in a dedicated session row (fast indexed lookup, supports multi-device)
+    const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
+    const expiresAt = addDays(new Date(), refreshExpiryDays);
+    await this.authRepo.createRefreshSession(userId, tenantId, tokenHash, expiresAt);
 
     return { accessToken, refreshToken };
   }
 
   private sanitizeUser(user: Record<string, any>) {
-    const { passwordHash, refreshTokenHash, ...safe } = user;
+    const { passwordHash, ...safe } = user;
     return safe;
   }
 }

@@ -230,8 +230,6 @@ model User {
   invitedAt        DateTime?
   role             UserRole   @default(SALES_REP)
   status           UserStatus @default(ACTIVE)
-  // Refresh token stored as bcrypt hash - never plain text
-  refreshTokenHash String?
   lastLoginAt      DateTime?
   invitedById      String?
   settings         Json       @default("{}")  // user-level preferences
@@ -255,11 +253,26 @@ model User {
   ticketReplies    TicketReply[] @relation("TicketReplyAuthor")
   notifications    Notification[]
   auditLogs        AuditLog[]
+  refreshSessions  RefreshSession[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
   @@index([tenantId, status])
   @@map("users")
+}
+
+model RefreshSession {
+  id        String   @id @default(uuid())
+  userId    String
+  tenantId  String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_sessions")
 }
 
 // ============================================================
