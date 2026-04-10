@@ -196,7 +196,7 @@ export default function PricingPage() {
         </h1>
         <p className="text-lg text-slate-500 max-w-xl mx-auto mb-8">
           All prices in <span className="font-semibold text-slate-700">USD</span>.
-          Start free — upgrade whenever you're ready.
+          Start free &mdash; upgrade whenever you&apos;re ready.
         </p>
 
         {/* Billing toggle */}
@@ -434,7 +434,7 @@ export default function PricingPage() {
           <p className="text-center text-xs text-slate-400 mt-6">
             Already have an account?{' '}
             <Link href="/login" className="text-blue-600 hover:underline">Sign in</Link>
-            {' '}to manage your subscription from Settings → Billing.
+            {' '}to manage your subscription from Settings &rarr; Billing.
           </p>
         </div>
       </div>
