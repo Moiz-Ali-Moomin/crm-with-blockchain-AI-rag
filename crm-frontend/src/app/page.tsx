@@ -5,6 +5,8 @@ import Link from 'next/link';
 import {
   Zap, Brain, GitBranch, Mail, BarChart2, ShieldCheck, Users,
   ArrowRight, Check, Star, TrendingUp, LayoutDashboard,
+  MousePointerClick, Settings2, Rocket, Quote,
+  Twitter, Linkedin, BookOpen, Headphones, Building2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -15,32 +17,32 @@ const FEATURES = [
   {
     icon: Brain,
     title: 'AI Lead Scoring',
-    description: 'Automatically rank leads by close probability using ML signals from email, calls, and deal history.',
+    description: 'Automatically rank leads by close probability using ML signals from email, calls, and deal history. Stop guessing — start prioritizing.',
   },
   {
     icon: GitBranch,
     title: 'Visual Pipeline',
-    description: 'Drag-and-drop deal stages with real-time team visibility. Never lose track of where a deal stands.',
+    description: 'Drag-and-drop deal stages with real-time team visibility. Never lose track of where a deal stands or who owns the next step.',
   },
   {
     icon: Mail,
     title: 'Email Sequences',
-    description: 'Automated follow-up workflows that trigger on lead behavior. Set it once, close deals on autopilot.',
+    description: 'Automated follow-up workflows that trigger on lead behavior. Set it once, close deals on autopilot while your team focuses elsewhere.',
   },
   {
     icon: BarChart2,
     title: 'Revenue Analytics',
-    description: 'Real-time forecasting with monthly and quarterly breakdowns. Know your number before month-end.',
+    description: 'Real-time forecasting with monthly and quarterly breakdowns. Know your number before month-end — not the morning after.',
   },
   {
     icon: ShieldCheck,
     title: 'Blockchain Audit',
-    description: 'Immutable activity log — every deal action cryptographically recorded. Full compliance, zero effort.',
+    description: 'Immutable activity log — every deal action cryptographically recorded. Full compliance, zero effort, and complete peace of mind.',
   },
   {
     icon: Users,
     title: 'Team Collaboration',
-    description: 'Shared inbox, activity feeds, and @mention notifications. Keep your whole team aligned on every deal.',
+    description: 'Shared inbox, activity feeds, and @mention notifications. Keep your whole team aligned on every deal, every day.',
   },
 ] as const;
 
@@ -66,6 +68,116 @@ const SIDEBAR_NAV = [
   { label: 'Pipeline',  icon: GitBranch },
   { label: 'Analytics', icon: BarChart2 },
 ] as const;
+
+const HOW_IT_WORKS = [
+  {
+    step: '01',
+    icon: MousePointerClick,
+    title: 'Connect your tools in minutes',
+    description: 'Import contacts from your existing spreadsheets, email, or any CRM. Our guided onboarding has most teams fully set up in under 30 minutes — no IT required.',
+  },
+  {
+    step: '02',
+    icon: Settings2,
+    title: 'Let AI score and prioritize your pipeline',
+    description: 'Our AI engine immediately gets to work, analyzing engagement patterns and deal signals to surface the leads most likely to close. You always know exactly where to focus.',
+  },
+  {
+    step: '03',
+    icon: Rocket,
+    title: 'Close faster, forecast accurately, repeat',
+    description: 'With your pipeline visible, automated sequences running, and real-time analytics in hand, your team spends less time on admin and more time on conversations that close.',
+  },
+] as const;
+
+const TESTIMONIALS = [
+  {
+    quote: "We switched from Salesforce six months ago and our close rate is up 34%. The AI scoring alone saved our reps 2 hours a day — they're actually excited to open the CRM now.",
+    name: 'Sarah Chen',
+    title: 'VP of Sales, TechStart',
+    initials: 'SC',
+    color: 'bg-blue-600',
+  },
+  {
+    quote: "The blockchain audit trail was the deciding factor for our compliance team. We can prove every interaction happened exactly when and how we say it did. It's a game-changer for our regulated industry.",
+    name: 'Marcus Williams',
+    title: 'Head of Revenue, GlobalTech',
+    initials: 'MW',
+    color: 'bg-emerald-600',
+  },
+  {
+    quote: "I've evaluated 12 CRMs in my career. This is the first one where the AI actually feels useful rather than a marketing bullet point. The pipeline forecasting is eerily accurate.",
+    name: 'Priya Anand',
+    title: 'CRO, NovaSales',
+    initials: 'PA',
+    color: 'bg-violet-600',
+  },
+] as const;
+
+const PRICING = [
+  {
+    name: 'Starter',
+    price: '$0',
+    period: 'Free forever',
+    description: 'Perfect for solo founders and small teams just getting started with a structured sales process.',
+    highlight: false,
+    cta: 'Get started free',
+    href: '/register',
+    features: [
+      'Up to 3 users',
+      '500 contacts',
+      'Visual pipeline (1 board)',
+      'Email integration',
+      'Basic analytics',
+      'Community support',
+    ],
+  },
+  {
+    name: 'Pro',
+    price: '$49',
+    period: 'per user / month',
+    description: 'For growing sales teams that need AI, automation, and serious forecasting power.',
+    highlight: true,
+    cta: 'Start free 14-day trial',
+    href: '/register',
+    features: [
+      'Unlimited users',
+      'Unlimited contacts',
+      'AI lead scoring',
+      'Email sequences & automation',
+      'Revenue forecasting',
+      'Blockchain audit log',
+      'Priority support',
+      'Custom deal stages',
+    ],
+  },
+  {
+    name: 'Enterprise',
+    price: 'Custom',
+    period: 'tailored to your team',
+    description: 'For large organizations that need SSO, advanced permissions, dedicated onboarding, and SLAs.',
+    highlight: false,
+    cta: 'Talk to sales',
+    href: '/login',
+    features: [
+      'Everything in Pro',
+      'SSO & SAML',
+      'Custom roles & permissions',
+      'Dedicated CSM',
+      'Custom SLA',
+      'On-premise deployment option',
+      'Advanced compliance reporting',
+      'API & webhooks access',
+    ],
+  },
+] as const;
+
+const FOOTER_LINKS = {
+  Product: ['Features', 'AI Copilot', 'Pipeline', 'Analytics', 'Integrations', "What's new"],
+  Company:  ['About', 'Blog', 'Careers', 'Press', 'Partners'],
+  Resources: ['Documentation', 'API Reference', 'Status', 'Community', 'Changelog'],
+  Legal:    ['Privacy Policy', 'Terms of Service', 'Cookie Policy', 'GDPR'],
+} as const;
 
 // ── LandingNav ────────────────────────────────────────────────────────────────
 
@@ -97,9 +209,10 @@ function LandingNav() {
         {/* Nav links */}
         <nav className="hidden md:flex items-center gap-8">
           {[
-            { label: 'Features', href: '#features' },
-            { label: 'AI',       href: '#ai' },
-            { label: 'Pricing',  href: '/pricing' },
+            { label: 'Features',     href: '#features' },
+            { label: 'How it works', href: '#how-it-works' },
+            { label: 'AI Copilot',   href: '#ai' },
+            { label: 'Pricing',      href: '#pricing' },
           ].map(({ label, href }) => (
             <Link
               key={label}
@@ -117,7 +230,7 @@ function LandingNav() {
             <Link href="/login">Sign in</Link>
           </Button>
           <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" asChild>
-            <Link href="/login">Start free trial</Link>
+            <Link href="/register">Start free trial</Link>
           </Button>
         </div>
       </div>
@@ -148,8 +261,9 @@ function HeroSection() {
 
             {/* Subheadline */}
             <p className="text-lg text-slate-600 leading-relaxed max-w-md mb-8">
-              Manage your entire sales pipeline in one place. AI lead scoring, visual pipeline,
-              and real&#8209;time analytics — built for teams that want to hit quota.
+              Stop losing deals to slow follow-up and scattered data. CRM Platform brings AI lead scoring,
+              visual pipeline management, and real&#8209;time analytics into one place — so your team
+              always knows the right move.
             </p>
 
             {/* CTA buttons */}
@@ -159,13 +273,13 @@ function HeroSection() {
                 className="bg-blue-600 hover:bg-blue-700 text-white gap-2"
                 asChild
               >
-                <Link href="/login">
+                <Link href="/register">
                   Start free trial
                   <ArrowRight size={16} />
                 </Link>
               </Button>
               <Button size="lg" variant="outline" className="border-slate-300 text-slate-700 hover:border-slate-400 hover:bg-slate-50" asChild>
-                <Link href="/login">See a demo</Link>
+                <Link href="#how-it-works">See how it works</Link>
               </Button>
             </div>
 
@@ -298,7 +412,7 @@ function LogoBar() {
     <section className="py-12 bg-slate-50 border-y border-slate-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <p className="text-center text-[11px] font-semibold text-slate-400 uppercase tracking-[0.14em] mb-8">
-          Trusted by fast-growing sales teams
+          Trusted by fast-growing sales teams at
         </p>
         <div className="flex flex-wrap justify-center items-center gap-x-10 gap-y-4">
           {LOGOS.map((name) => (
@@ -307,6 +421,61 @@ function LogoBar() {
             </span>
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+// ── HowItWorksSection ─────────────────────────────────────────────────────────
+
+function HowItWorksSection() {
+  return (
+    <section id="how-it-works" className="py-24 bg-slate-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+        <div className="max-w-2xl mx-auto text-center mb-16">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-600 mb-4">
+            How it works
+          </p>
+          <h2 className="text-3xl lg:text-4xl font-bold text-slate-900 mb-4">
+            From chaos to closed — in three steps
+          </h2>
+          <p className="text-lg text-slate-600 leading-relaxed">
+            Most CRMs take weeks to set up and months to get value from.
+            CRM Platform is different — you'll see results on day one.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
+          {/* Connector line — desktop only */}
+          <div className="hidden md:block absolute top-10 left-[calc(16.67%+20px)] right-[calc(16.67%+20px)] h-px bg-slate-200 z-0" />
+
+          {HOW_IT_WORKS.map(({ step, icon: Icon, title, description }) => (
+            <div key={step} className="relative z-10 flex flex-col items-start">
+              {/* Step number + icon */}
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-12 h-12 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
+                  <Icon size={22} className="text-blue-600" strokeWidth={1.8} />
+                </div>
+                <span className="text-3xl font-bold text-slate-100 select-none">{step}</span>
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-3">{title}</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">{description}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Bottom CTA nudge */}
+        <div className="mt-14 text-center">
+          <Link
+            href="/register"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors duration-150"
+          >
+            Get started for free
+            <ArrowRight size={15} strokeWidth={2.5} />
+          </Link>
+        </div>
+
       </div>
     </section>
   );
@@ -321,12 +490,15 @@ function FeaturesSection() {
 
         {/* Header */}
         <div className="max-w-2xl mx-auto text-center mb-16">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-600 mb-4">
+            Everything you need
+          </p>
           <h2 className="text-3xl lg:text-4xl font-bold text-slate-900 mb-4">
-            Everything your sales team needs
+            Built for the way modern sales teams work
           </h2>
           <p className="text-lg text-slate-600 leading-relaxed">
             From first touch to closed-won — manage your entire revenue motion
-            without switching tabs.
+            without switching tabs or updating spreadsheets.
           </p>
         </div>
 
@@ -358,6 +530,7 @@ function FeaturesSection() {
             </div>
           ))}
         </div>
+
       </div>
     </section>
   );
@@ -379,12 +552,18 @@ function AiSection() {
             </div>
 
             <h2 className="text-3xl lg:text-4xl font-bold text-slate-900 mb-5 leading-tight">
-              Your AI sales assistant, always on
+              Your AI sales assistant,<br />always on — never tired
             </h2>
 
-            <p className="text-lg text-slate-600 leading-relaxed mb-8">
-              Ask questions about your pipeline, get intelligent follow-up suggestions,
-              and draft emails in seconds — all powered by your real CRM data.
+            <p className="text-lg text-slate-600 leading-relaxed mb-6">
+              Stop digging through activity logs to figure out what happened on a deal.
+              Just ask. Our AI Copilot reads your entire CRM history and surfaces exactly
+              what you need — in plain English.
+            </p>
+
+            <p className="text-base text-slate-600 leading-relaxed mb-8">
+              Whether you need a deal summary before a call, a drafted follow-up email,
+              or a forecast roll-up for your board, Copilot handles it in seconds.
             </p>
 
             <ul className="space-y-3.5">
@@ -392,6 +571,7 @@ function AiSection() {
                 'Ask questions in plain English about any deal or contact',
                 'AI-generated follow-up suggestions based on engagement signals',
                 'Draft personalized emails from deal history in one click',
+                'Forecast roll-ups and win/loss explanations on demand',
               ].map((item) => (
                 <li key={item} className="flex items-start gap-3 text-sm text-slate-700">
                   <span className="mt-0.5 w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
@@ -478,11 +658,15 @@ function StatsSection() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         <div className="max-w-2xl mx-auto text-center mb-16">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-600 mb-4">
+            Real results
+          </p>
           <h2 className="text-3xl lg:text-4xl font-bold text-slate-900 mb-4">
-            Numbers that move the needle
+            The numbers don't lie
           </h2>
           <p className="text-lg text-slate-600 leading-relaxed">
-            Join the teams already hitting quota with CRM Platform.
+            Over 2,400 sales teams use CRM Platform to manage their pipeline, hit quota,
+            and grow revenue year over year.
           </p>
         </div>
 
@@ -502,30 +686,200 @@ function StatsSection() {
   );
 }
 
+// ── TestimonialsSection ───────────────────────────────────────────────────────
+
+function TestimonialsSection() {
+  return (
+    <section className="py-24 bg-slate-50 border-y border-slate-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+        <div className="max-w-2xl mx-auto text-center mb-16">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-600 mb-4">
+            Customer stories
+          </p>
+          <h2 className="text-3xl lg:text-4xl font-bold text-slate-900 mb-4">
+            Don't take our word for it
+          </h2>
+          <p className="text-lg text-slate-600 leading-relaxed">
+            Here's what sales leaders say after switching to CRM Platform.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {TESTIMONIALS.map(({ quote, name, title, initials, color }) => (
+            <div
+              key={name}
+              className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col hover:border-slate-300 hover:shadow-sm transition-all duration-200"
+            >
+              <Quote size={24} className="text-blue-100 mb-4 shrink-0" strokeWidth={2} />
+              <p className="text-sm text-slate-700 leading-relaxed flex-1 mb-6">
+                "{quote}"
+              </p>
+              <div className="flex items-center gap-3">
+                <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0', color)}>
+                  {initials}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 leading-none mb-0.5">{name}</p>
+                  <p className="text-xs text-slate-500">{title}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Star rating strip */}
+        <div className="mt-12 flex flex-col items-center gap-2">
+          <div className="flex items-center gap-1">
+            {[0,1,2,3,4].map((i) => (
+              <Star key={i} size={18} className="text-amber-400 fill-amber-400" strokeWidth={1.5} />
+            ))}
+          </div>
+          <p className="text-sm text-slate-500">4.9 / 5 average · based on 840+ reviews</p>
+        </div>
+
+      </div>
+    </section>
+  );
+}
+
+// ── PricingSection ────────────────────────────────────────────────────────────
+
+function PricingSection() {
+  return (
+    <section id="pricing" className="py-24 bg-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+        <div className="max-w-2xl mx-auto text-center mb-16">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-600 mb-4">
+            Simple pricing
+          </p>
+          <h2 className="text-3xl lg:text-4xl font-bold text-slate-900 mb-4">
+            Transparent pricing, no surprises
+          </h2>
+          <p className="text-lg text-slate-600 leading-relaxed">
+            Start free. Upgrade when your team is ready.
+            Every plan includes unlimited deals and all core pipeline tools.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+          {PRICING.map(({ name, price, period, description, highlight, cta, href, features }) => (
+            <div
+              key={name}
+              className={cn(
+                'rounded-xl border p-8 flex flex-col',
+                highlight
+                  ? 'border-blue-600 bg-blue-600 shadow-xl shadow-blue-600/20 relative'
+                  : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm transition-all duration-200',
+              )}
+            >
+              {highlight && (
+                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+                  <span className="bg-amber-400 text-amber-900 text-[11px] font-bold uppercase tracking-wide px-3 py-1 rounded-full">
+                    Most popular
+                  </span>
+                </div>
+              )}
+
+              {/* Plan header */}
+              <div className="mb-6">
+                <p className={cn('text-sm font-semibold mb-1', highlight ? 'text-blue-200' : 'text-slate-500')}>
+                  {name}
+                </p>
+                <div className="flex items-end gap-1.5 mb-2">
+                  <span className={cn('text-4xl font-bold', highlight ? 'text-white' : 'text-slate-900')}>
+                    {price}
+                  </span>
+                  {price !== 'Custom' && (
+                    <span className={cn('text-sm mb-1.5', highlight ? 'text-blue-200' : 'text-slate-500')}>
+                      / {period}
+                    </span>
+                  )}
+                </div>
+                {price === 'Custom' && (
+                  <p className={cn('text-sm', highlight ? 'text-blue-200' : 'text-slate-500')}>{period}</p>
+                )}
+                <p className={cn('text-sm leading-relaxed', highlight ? 'text-blue-100' : 'text-slate-600')}>
+                  {description}
+                </p>
+              </div>
+
+              {/* CTA */}
+              <Link
+                href={href}
+                className={cn(
+                  'w-full text-center py-2.5 px-4 rounded-lg text-sm font-semibold mb-8 transition-colors duration-150',
+                  highlight
+                    ? 'bg-white text-blue-600 hover:bg-blue-50'
+                    : 'bg-blue-600 text-white hover:bg-blue-700',
+                )}
+              >
+                {cta}
+              </Link>
+
+              {/* Features */}
+              <ul className="space-y-3">
+                {features.map((f) => (
+                  <li key={f} className="flex items-start gap-2.5">
+                    <span className={cn(
+                      'mt-0.5 w-4 h-4 rounded-full flex items-center justify-center shrink-0',
+                      highlight ? 'bg-white/20' : 'bg-blue-50',
+                    )}>
+                      <Check size={9} strokeWidth={3} className={highlight ? 'text-white' : 'text-blue-600'} />
+                    </span>
+                    <span className={cn('text-sm', highlight ? 'text-blue-100' : 'text-slate-600')}>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        {/* Enterprise nudge */}
+        <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-2 text-sm text-slate-500">
+          <Building2 size={16} className="text-slate-400" />
+          <span>Need a custom contract, volume pricing, or procurement support?</span>
+          <Link href="/login" className="text-blue-600 font-semibold hover:text-blue-700 transition-colors duration-150">
+            Talk to our sales team →
+          </Link>
+        </div>
+
+      </div>
+    </section>
+  );
+}
+
 // ── CtaSection ────────────────────────────────────────────────────────────────
 
 function CtaSection() {
   return (
-    <section id="pricing" className="py-28 bg-slate-900">
+    <section className="py-28 bg-slate-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
 
+        <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-400 bg-blue-950 border border-blue-900 px-3 py-1.5 rounded-full mb-8">
+          <Rocket size={12} strokeWidth={2.5} />
+          Join 2,400+ teams already hitting quota
+        </div>
+
         <h2 className="text-4xl lg:text-5xl font-bold text-white mb-5 leading-tight max-w-3xl mx-auto">
-          Ready to close more deals?
+          Your pipeline isn't going to manage itself
         </h2>
 
-        <p className="text-lg text-slate-400 max-w-xl mx-auto mb-10 leading-relaxed">
-          Join 2,400 sales teams already using CRM Platform to manage their pipeline,
-          score leads, and hit quota every quarter.
+        <p className="text-lg text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+          Every day without a real CRM is a day your best leads are going cold,
+          your reps are spending hours on admin, and your forecast is a guess.
+          Start your free trial today — no credit card, no commitments.
         </p>
 
-        <div className="flex flex-col sm:flex-row justify-center gap-4">
+        <div className="flex flex-col sm:flex-row justify-center gap-4 mb-10">
           <Button
             size="lg"
             className="bg-blue-600 hover:bg-blue-500 text-white gap-2 transition-colors"
             asChild
           >
-            <Link href="/pricing">
-              View pricing & plans
+            <Link href="/register">
+              Start free 14-day trial
               <ArrowRight size={16} />
             </Link>
           </Button>
@@ -535,12 +889,12 @@ function CtaSection() {
             className="bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800 hover:border-slate-600 hover:text-white transition-colors"
             asChild
           >
-            <Link href="/register">Start free trial</Link>
+            <Link href="#how-it-works">See how it works</Link>
           </Button>
         </div>
 
-        <p className="mt-8 text-xs text-slate-600">
-          Free 14-day trial · No credit card · Cancel anytime
+        <p className="text-xs text-slate-600">
+          Free 14-day trial · No credit card · Cancel anytime · Setup in under 30 minutes
         </p>
 
       </div>
@@ -552,36 +906,80 @@ function CtaSection() {
 
 function LandingFooter() {
   return (
-    <footer className="py-10 bg-slate-900 border-t border-slate-800">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-5">
+    <footer className="bg-slate-900 border-t border-slate-800">
+      {/* Main footer grid */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-8">
 
-          {/* Logo */}
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
-              <Zap size={14} className="text-white" strokeWidth={2.5} />
+          {/* Brand col */}
+          <div className="col-span-2">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center shrink-0">
+                <Zap size={14} className="text-white" strokeWidth={2.5} />
+              </div>
+              <span className="text-white font-semibold text-sm">CRM Platform</span>
             </div>
-            <span className="text-white font-semibold text-sm">CRM Platform</span>
+            <p className="text-sm text-slate-500 leading-relaxed max-w-[220px] mb-6">
+              The AI-powered CRM that helps modern sales teams close more deals, faster.
+            </p>
+            {/* Social icons */}
+            <div className="flex items-center gap-3">
+              {[
+                { icon: Twitter,  label: 'Twitter' },
+                { icon: Linkedin, label: 'LinkedIn' },
+              ].map(({ icon: Icon, label }) => (
+                <a
+                  key={label}
+                  href="#"
+                  aria-label={label}
+                  className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white hover:border-slate-600 transition-colors duration-150"
+                >
+                  <Icon size={14} strokeWidth={1.8} />
+                </a>
+              ))}
+            </div>
           </div>
 
-          {/* Links */}
-          <div className="flex items-center gap-6">
-            {['Privacy', 'Terms', 'Status', 'Docs'].map((link) => (
-              <a
-                key={link}
-                href="#"
-                className="text-sm text-slate-500 hover:text-slate-300 transition-colors duration-150"
-              >
-                {link}
-              </a>
-            ))}
-          </div>
+          {/* Link columns */}
+          {(Object.entries(FOOTER_LINKS) as [string, readonly string[]][]).map(([heading, links]) => (
+            <div key={heading}>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 mb-4">
+                {heading}
+              </p>
+              <ul className="space-y-2.5">
+                {links.map((link) => (
+                  <li key={link}>
+                    <a
+                      href="#"
+                      className="text-sm text-slate-500 hover:text-slate-300 transition-colors duration-150"
+                    >
+                      {link}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
 
-          {/* Copyright */}
+        </div>
+      </div>
+
+      {/* Bottom bar */}
+      <div className="border-t border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-sm text-slate-600">
-            © {new Date().getFullYear()} CRM Platform. All rights reserved.
+            © {new Date().getFullYear()} CRM Platform, Inc. All rights reserved.
           </p>
-
+          <div className="flex items-center gap-4">
+            <a href="#" className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-400 transition-colors duration-150">
+              <BookOpen size={12} />
+              Documentation
+            </a>
+            <a href="#" className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-400 transition-colors duration-150">
+              <Headphones size={12} />
+              Support
+            </a>
+          </div>
         </div>
       </div>
     </footer>
@@ -597,9 +995,12 @@ export default function HomePage() {
       <main>
         <HeroSection />
         <LogoBar />
+        <HowItWorksSection />
         <FeaturesSection />
         <AiSection />
         <StatsSection />
+        <TestimonialsSection />
+        <PricingSection />
         <CtaSection />
       </main>
       <LandingFooter />
