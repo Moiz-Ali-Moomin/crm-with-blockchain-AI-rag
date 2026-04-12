@@ -40,21 +40,21 @@ export class PaymentStateMachine {
   static assertTransition(from: PaymentStatus, to: PaymentStatus): void {
     if (from === to) return; // no-op, idempotent
 
+    const allowed = VALID_TRANSITIONS.find(
+      (t) => t.to === to && t.from.includes(from),
+    );
+
+    if (allowed) return;
+
     if (TERMINAL_STATES.includes(from)) {
       throw new BadRequestException(
         `Payment is in terminal state ${from} — cannot transition to ${to}`,
       );
     }
 
-    const allowed = VALID_TRANSITIONS.find(
-      (t) => t.to === to && t.from.includes(from),
+    throw new BadRequestException(
+      `Invalid payment transition: ${from} → ${to}`,
     );
-
-    if (!allowed) {
-      throw new BadRequestException(
-        `Invalid payment transition: ${from} → ${to}`,
-      );
-    }
   }
 
   static isTerminal(status: PaymentStatus): boolean {
