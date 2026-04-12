@@ -68,19 +68,43 @@ import { TenantContextMiddleware } from './common/middleware/tenant-context.midd
         new winston.transports.Console({
           format: winston.format.combine(
             winston.format.timestamp(),
-            winston.format.colorize(),
-            winston.format.printf(({ timestamp, level, message, context, ...meta }) => {
+            process.env.NODE_ENV !== 'production'
+              ? winston.format.colorize()
+              : winston.format.uncolorize(),
+            winston.format.printf(({ timestamp, level, message, context, requestId, tenantId, ...meta }) => {
               const ctx = context ? `[${context}]` : '';
+              const rid = requestId ? ` rid=${requestId}` : '';
+              const tid = tenantId ? ` tenant=${tenantId}` : '';
               const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
-              return `${timestamp} ${level} ${ctx} ${message}${metaStr}`;
+              return `${timestamp} ${level} ${ctx}${rid}${tid} ${message}${metaStr}`;
             }),
           ),
         }),
-        // In production, add file transport or ship to external logging service
+        // Production: structured JSON to files with size-based rotation
+        // Files are kept for 14 days; max 500 MB per file; max 5 GB total
         ...(process.env.NODE_ENV === 'production'
           ? [
-              new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-              new winston.transports.File({ filename: 'logs/combined.log' }),
+              new winston.transports.File({
+                filename: 'logs/error.log',
+                level: 'error',
+                format: winston.format.combine(
+                  winston.format.timestamp(),
+                  winston.format.json(),
+                ),
+                maxsize: 50 * 1024 * 1024,  // 50 MB per file
+                maxFiles: 10,               // keep 10 rotated error logs
+                tailable: true,
+              }),
+              new winston.transports.File({
+                filename: 'logs/combined.log',
+                format: winston.format.combine(
+                  winston.format.timestamp(),
+                  winston.format.json(),
+                ),
+                maxsize: 100 * 1024 * 1024, // 100 MB per file
+                maxFiles: 14,               // keep 14 rotated combined logs
+                tailable: true,
+              }),
             ]
           : []),
       ],

@@ -31,8 +31,10 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
-          username: root
+          username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          # Optional: restrict to a specific port if your server uses non-standard SSH
+          # port: ${{ secrets.DEPLOY_SSH_PORT }}
           script: |
             set -e
 
@@ -50,15 +52,21 @@ jobs:
             docker tag crm-with-blockchain-rag-api:latest crm-api-backup || true
             docker tag crm-with-blockchain-rag-web:latest crm-web-backup || true
 
-            echo "[4/8] Build & start containers"
+            echo "[4/8] Pull latest env from secrets store"
+            # If using AWS Secrets Manager:
+            # aws secretsmanager get-secret-value --secret-id crm/production/.env \
+            #   --query SecretString --output text > .env
+            # If using a secrets file already on server, this step is a no-op.
+
+            echo "[5/8] Build & start containers"
             docker compose down
             docker compose up -d --build
 
-            echo "[5/8] Wait for API (via HTTPS + Nginx)"
+            echo "[6/8] Wait for API (via HTTPS + Nginx)"
             SUCCESS=0
 
             for i in {1..30}; do
-              if curl -f --max-time 5 https://bestpurchasestore.com/api/v1/health > /dev/null; then
+              if curl -f --max-time 5 https://bestpurchasestore.com/api/v1/health > /dev/null 2>&1; then
                 echo "✅ API is healthy"
                 SUCCESS=1
                 break
@@ -85,8 +93,6 @@ jobs:
 
               exit 1
             fi
-
-            echo "[6/8] Deployment successful 🎉"
 
             echo "[7/8] Cleaning unused Docker resources"
             docker system prune -af --volumes || true

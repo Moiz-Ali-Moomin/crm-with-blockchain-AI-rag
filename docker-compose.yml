@@ -6,35 +6,53 @@ services:
     container_name: crm_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: crm_user
-      POSTGRES_PASSWORD: strongpassword123
-      POSTGRES_DB: crm_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - crm_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   redis:
     image: redis:7-alpine
     container_name: crm_redis
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     networks:
       - crm_internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   mongodb:
     image: mongo:7-jammy
     container_name: crm_mongodb
     restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: crm_mongo
-      MONGO_INITDB_ROOT_PASSWORD: strongmongo123
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
     volumes:
       - mongo_data:/data/db
     networks:
       - crm_internal
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   api:
     build:
@@ -48,34 +66,49 @@ services:
       PORT: 3001
       API_VERSION: v1
     depends_on:
-      - postgres
-      - redis
-      - mongodb
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
     networks:
       - crm_internal
       - crm_public
+    volumes:
+      - api_logs:/app/logs
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/v1/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 60s
+    # Prevent OOM kills from taking down the whole host
+    deploy:
+      resources:
+        limits:
+          memory: 1g
 
   web:
     build:
       context: ./crm-frontend
       args:
-        NEXT_PUBLIC_API_URL: https://bestpurchasestore.com/api/v1
-        NEXT_PUBLIC_APP_URL: https://bestpurchasestore.com
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
     container_name: crm_web
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     networks:
       - crm_public
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   nginx:
     image: nginx:alpine
@@ -86,17 +119,57 @@ services:
       - "443:443"
     volumes:
       - ./nginx:/etc/nginx
-      - /etc/nginx/ssl:/etc/nginx/ssl
+      - /etc/nginx/ssl:/etc/nginx/ssl:ro
+      - certbot_www:/var/www/certbot:ro
     depends_on:
       - web
       - api
     networks:
       - crm_public
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Daily Postgres backup ────────────────────────────────────────────────────
+  # Dumps the database every 24h and keeps the last 7 backups.
+  # Backup files land at ./backups/postgres/ on the host.
+  postgres-backup:
+    image: pgvector/pgvector:pg16
+    container_name: crm_postgres_backup
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backups/postgres:/backups
+    networks:
+      - crm_internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        while true; do
+          TIMESTAMP=$$(date +%Y%m%d_%H%M%S);
+          echo \"[$$TIMESTAMP] Running backup...\";
+          pg_dump -h postgres -U $$POSTGRES_USER $$POSTGRES_DB | gzip > /backups/crm_$$TIMESTAMP.sql.gz;
+          echo \"[$$TIMESTAMP] Backup complete.\";
+          ls -t /backups/*.sql.gz | tail -n +8 | xargs rm -f;
+          echo \"Sleeping 24h...\";
+          sleep 86400;
+        done
+      "
 
 volumes:
   postgres_data:
   redis_data:
   mongo_data:
+  certbot_www:
+  api_logs:
 
 networks:
   crm_internal:
