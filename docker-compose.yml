@@ -43,12 +43,14 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_USER: ${MONGO_USER}
+      MONGO_PASSWORD: ${MONGO_PASSWORD}
     volumes:
       - mongo_data:/data/db
     networks:
       - crm_internal
     healthcheck:
-      test: ["CMD", "mongosh", "-u", "${MONGO_USER}", "-p", "${MONGO_PASSWORD}", "--authenticationDatabase", "admin", "--quiet", "--eval", "db.adminCommand('ping').ok || exit 1"]
+      test: ["CMD-SHELL", "mongosh -u \"$MONGO_USER\" -p \"$MONGO_PASSWORD\" --authenticationDatabase admin --quiet --eval \"db.adminCommand('ping').ok\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
