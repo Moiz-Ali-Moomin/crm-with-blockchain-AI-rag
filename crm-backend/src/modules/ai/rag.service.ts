@@ -105,11 +105,6 @@ export class RagService {
    * @returns       - LLM answer with source attribution and confidence score
    */
   async query(params: RagQueryParams): Promise<RagResponse> {
-    // Guard here, not in constructor — fail the specific request, not the entire process.
-    if (!this.config.get<string>('OPENAI_API_KEY')) {
-      throw new Error('RAG queries are unavailable: OPENAI_API_KEY is not configured.');
-    }
-
     const {
       tenantId,
       query,
@@ -175,6 +170,12 @@ export class RagService {
     const userMessage = `CRM Context:\n\n${contextWindow}\n\n---\nQuestion: ${query}`;
 
     // ── Generation phase ──────────────────────────────────────────────────────
+    // Guard at the exact call site — only the LLM path requires OPENAI_API_KEY.
+    // Cache hits, no-chunk early returns, and audit logging all work without it.
+    if (!this.config.get<string>('OPENAI_API_KEY')) {
+      throw new Error('RAG queries are unavailable: OPENAI_API_KEY is not configured.');
+    }
+
     const startMs = Date.now();
     const completion = await this.openai.chat.completions.create({
       model: this.model,
