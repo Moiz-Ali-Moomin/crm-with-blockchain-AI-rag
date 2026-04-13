@@ -1,0 +1,98 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BLUE slot — app services
+# Ports are internal only (not bound to host). Nginx routes to them by name.
+#
+# WHY separate files: docker compose -f base.yml -f slot.yml lets us manage
+# two fully independent app stacks (blue + green) without touching shared
+# infra services (postgres, redis, nginx, observability).
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  api:
+    image: ${IMAGE_API}:${IMAGE_TAG}
+    container_name: crm_api_blue
+    restart: unless-stopped
+    env_file:
+      - /opt/crm/.secrets
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      API_VERSION: v1
+      SLOT: blue
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - crm_internal
+    expose:
+      - "3001"
+    volumes:
+      - api_logs_blue:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/api/v1/health/live || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: '1.0'
+        reservations:
+          memory: 256m
+    # Non-root, read-only filesystem where possible
+    security_opt:
+      - no-new-privileges:true
+    read_only: false   # NestJS writes logs; set true if logs go to stdout only
+    tmpfs:
+      - /tmp
+
+  web:
+    image: ${IMAGE_WEB}:${IMAGE_TAG}
+    container_name: crm_web_blue
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      SLOT: blue
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - crm_internal
+      - crm_public
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: '0.5'
+        reservations:
+          memory: 128m
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+
+volumes:
+  api_logs_blue:
+
+networks:
+  crm_internal:
+    external: true
+  crm_public:
+    external: true

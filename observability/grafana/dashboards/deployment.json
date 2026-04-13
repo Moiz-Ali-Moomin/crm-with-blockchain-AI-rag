@@ -1,0 +1,92 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": { "list": [] },
+  "description": "CRM Blue-Green Deployment Monitor — compare blue vs green slot metrics during canary",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "list" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[1m])) by (slot)",
+          "legendFormat": "{{slot}} — req/s"
+        }
+      ],
+      "title": "Request Rate by Slot",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "percentunit" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) by (slot) / sum(rate(http_requests_total[5m])) by (slot)",
+          "legendFormat": "{{slot}} — error rate"
+        }
+      ],
+      "title": "Error Rate by Slot (5xx)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, slot))",
+          "legendFormat": "{{slot}} — p99"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, slot))",
+          "legendFormat": "{{slot}} — p50"
+        }
+      ],
+      "title": "Latency p50/p99 by Slot",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "bytes" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{name=~\"crm_api.*\"}",
+          "legendFormat": "{{name}}"
+        }
+      ],
+      "title": "Container Memory (API slots)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["crm", "deployment"],
+  "title": "CRM — Deployment Monitor",
+  "uid": "crm-deployment",
+  "version": 1
+}

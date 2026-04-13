@@ -1,0 +1,47 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://crm_loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # ── Docker container logs ──────────────────────────────────────────────
+  # WHY: Promtail reads directly from Docker's JSON log files, so we get logs
+  # from ALL containers without any app-level changes. Labels are derived from
+  # Docker metadata so you can filter by container name, image, or slot in Grafana.
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # Use container name as the service label
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      # Add image tag so you can correlate logs with deployments
+      - source_labels: ['__meta_docker_container_image']
+        target_label: image
+      # Add compose project (blue/green slot identification)
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: slot
+      # Drop noisy healthcheck log lines
+      - source_labels: [__meta_docker_container_label_com_docker_container_name]
+        regex: '.*'
+        action: keep
+    pipeline_stages:
+      - docker: {}
+      # Parse JSON logs from Node.js (pino/winston structured logging)
+      - json:
+          expressions:
+            level: level
+            msg: msg
+            time: time
+      - labels:
+          level:
+      # Drop debug logs in production to save storage
+      - drop:
+          expression: '.*level=debug.*'

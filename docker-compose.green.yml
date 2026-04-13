@@ -1,0 +1,92 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GREEN slot — app services
+# Mirrors blue exactly. Container names differ so both can run simultaneously.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  api:
+    image: ${IMAGE_API}:${IMAGE_TAG}
+    container_name: crm_api_green
+    restart: unless-stopped
+    env_file:
+      - /opt/crm/.secrets
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      API_VERSION: v1
+      SLOT: green
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - crm_internal
+    expose:
+      - "3001"
+    volumes:
+      - api_logs_green:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/api/v1/health/live || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: '1.0'
+        reservations:
+          memory: 256m
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+
+  web:
+    image: ${IMAGE_WEB}:${IMAGE_TAG}
+    container_name: crm_web_green
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      SLOT: green
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - crm_internal
+      - crm_public
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: '0.5'
+        reservations:
+          memory: 128m
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+
+volumes:
+  api_logs_green:
+
+networks:
+  crm_internal:
+    external: true
+  crm_public:
+    external: true

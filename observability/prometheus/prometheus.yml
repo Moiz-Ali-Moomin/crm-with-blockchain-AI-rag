@@ -1,0 +1,74 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: production
+    app: crm
+
+# ── Alertmanager (optional — add if you want PagerDuty/Slack alerts) ────────
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # ── Prometheus self-monitoring ─────────────────────────────────────────
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # ── Host metrics (node-exporter) ───────────────────────────────────────
+  # WHY: CPU, memory, disk, network — the four horsemen of incident response.
+  - job_name: node
+    static_configs:
+      - targets: ['crm_node_exporter:9100']
+
+  # ── Container metrics (cAdvisor) ───────────────────────────────────────
+  # WHY: per-container CPU/memory/network so you can see if crm_api_green
+  # is consuming 2x more memory than crm_api_blue during a canary.
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['crm_cadvisor:8080']
+    metric_relabel_configs:
+      # Drop high-cardinality metrics we don't need
+      - source_labels: [__name__]
+        regex: 'container_tasks_state|container_memory_failures_total'
+        action: drop
+
+  # ── API (NestJS — requires prom-client integration) ────────────────────
+  # WHY: application-level metrics (request rate, latency p99, error rate)
+  # are the most actionable signals during a canary. If error_rate spikes
+  # on crm_api_green but not crm_api_blue, rollback immediately.
+  - job_name: crm_api_blue
+    static_configs:
+      - targets: ['crm_api_blue:3001']
+    metrics_path: /api/v1/metrics
+    relabel_configs:
+      - target_label: slot
+        replacement: blue
+
+  - job_name: crm_api_green
+    static_configs:
+      - targets: ['crm_api_green:3001']
+    metrics_path: /api/v1/metrics
+    relabel_configs:
+      - target_label: slot
+        replacement: green
+
+  # ── Nginx (stub_status) ────────────────────────────────────────────────
+  - job_name: nginx
+    static_configs:
+      - targets: ['crm_nginx:9113']   # nginx-prometheus-exporter sidecar
+
+  # ── Postgres ───────────────────────────────────────────────────────────
+  - job_name: postgres
+    static_configs:
+      - targets: ['crm_postgres_exporter:9187']
+
+  # ── Redis ──────────────────────────────────────────────────────────────
+  - job_name: redis
+    static_configs:
+      - targets: ['crm_redis_exporter:9121']

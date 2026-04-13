@@ -5,100 +5,239 @@ on:
     workflows: ["CI"]
     types:
       - completed
+    branches:
+      - main
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (e.g. sha-abc1234). Defaults to latest main.'
+        required: false
+        default: ''
+      canary_weight:
+        description: 'Canary traffic weight (0-100). 0 = full blue-green, no canary.'
+        required: false
+        default: '0'
 
 concurrency:
   group: cd-production
-  cancel-in-progress: false
+  cancel-in-progress: false   # never cancel a running deploy — finish or rollback
 
 permissions:
   contents: read
+  packages: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_API: ghcr.io/${{ github.repository_owner }}/crm-api
+  IMAGE_WEB: ghcr.io/${{ github.repository_owner }}/crm-web
 
 jobs:
   deploy:
+    name: Blue-Green Deploy → Production
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (
         github.event_name == 'workflow_run' &&
-        github.event.workflow_run.conclusion == 'success'
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'
       )
 
     steps:
-      - name: Deploy to Server via SSH
+      # ── Resolve image tag ─────────────────────────────────────────────────
+      # WHY: the CD must know EXACTLY which image to deploy. Using the git SHA
+      # from the triggering workflow run guarantees we deploy the artifact that
+      # passed CI — not whatever happens to be tagged "latest" at deploy time.
+      - name: Resolve image tag
+        id: resolve
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            TAG="${{ github.event.inputs.image_tag }}"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            SHA="${{ github.event.workflow_run.head_sha }}"
+            TAG="sha-${SHA:0:7}"
+          else
+            echo "Cannot determine image tag" && exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "canary_weight=${{ github.event.inputs.canary_weight || '0' }}" >> "$GITHUB_OUTPUT"
+          echo "Deploying tag: $TAG"
+
+      # ── SSH: Blue-Green Deploy ────────────────────────────────────────────
+      - name: Deploy to server (blue-green)
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          IMAGE_API: ${{ env.IMAGE_API }}
+          IMAGE_WEB: ${{ env.IMAGE_WEB }}
+          CANARY_WEIGHT: ${{ steps.resolve.outputs.canary_weight }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
+          envs: IMAGE_TAG,IMAGE_API,IMAGE_WEB,CANARY_WEIGHT,GHCR_TOKEN,GHCR_USER
+          # Timeout generous — health checks can take up to 3 min
+          command_timeout: 18m
+          script: |
+            set -euo pipefail
+
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo " CRM Blue-Green Deploy — tag: $IMAGE_TAG"
+            echo " Canary weight: $CANARY_WEIGHT%"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+            DEPLOY_PATH="${DEPLOY_PATH:-/opt/crm}"
+            cd "$DEPLOY_PATH"
+
+            # ── [0] Pull deploy helpers ──────────────────────────────────────
+            # The scripts live in the repo; sync only the infra files
+            git fetch origin main --quiet
+            git checkout origin/main -- deploy/ nginx/ docker-compose.yml docker-compose.blue.yml docker-compose.green.yml
+
+            # ── [1] Authenticate to GHCR ────────────────────────────────────
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            # ── [2] Pull new images ─────────────────────────────────────────
+            # WHY: pull before switching traffic so the new container starts
+            # instantly — no download delay during the cutover window.
+            echo "[1/7] Pulling images: $IMAGE_TAG"
+            docker pull "${IMAGE_API}:${IMAGE_TAG}"
+            docker pull "${IMAGE_WEB}:${IMAGE_TAG}"
+
+            # ── [3] Determine active/idle slot ──────────────────────────────
+            # We maintain two stacks: blue and green.
+            # The ACTIVE slot serves real traffic; IDLE is where we deploy.
+            ACTIVE=$(cat /opt/crm/.active_slot 2>/dev/null || echo "blue")
+            if [ "$ACTIVE" = "blue" ]; then
+              IDLE="green"
+            else
+              IDLE="blue"
+            fi
+            echo "[2/7] Active slot: $ACTIVE → deploying to: $IDLE"
+
+            # ── [4] Load secrets via Docker secrets / env file ──────────────
+            # WHY: .env files are readable by anyone with shell access.
+            # We store secrets in /opt/crm/.secrets (mode 600, root-only)
+            # and pass them via --env-file only to the containers that need them.
+            # For AWS-style setups, replace this block with:
+            #   aws secretsmanager get-secret-value ...
+            if [ ! -f /opt/crm/.secrets ]; then
+              echo "ERROR: /opt/crm/.secrets not found — provision it first" && exit 1
+            fi
+
+            # ── [5] Start idle slot with new image ──────────────────────────
+            echo "[3/7] Starting $IDLE slot with tag $IMAGE_TAG"
+            IMAGE_API="${IMAGE_API}" \
+            IMAGE_WEB="${IMAGE_WEB}" \
+            IMAGE_TAG="${IMAGE_TAG}" \
+            SLOT="${IDLE}" \
+            docker compose \
+              -f docker-compose.yml \
+              -f "docker-compose.${IDLE}.yml" \
+              --project-name "crm-${IDLE}" \
+              --env-file /opt/crm/.secrets \
+              up -d --no-build --pull never
+
+            # ── [6] Health-gate new slot ─────────────────────────────────────
+            # WHY: we do NOT cut over traffic until we have confirmed the new
+            # slot is healthy. This is the core zero-downtime guarantee.
+            # Port offsets: blue=3001/3000, green=3011/3010 (internal only)
+            if [ "$IDLE" = "green" ]; then
+              API_PORT=3011
+            else
+              API_PORT=3001
+            fi
+
+            echo "[4/7] Health-checking $IDLE slot on internal port $API_PORT"
+            bash "$DEPLOY_PATH/deploy/health-check.sh" "$API_PORT" 60 5
+            echo "  ✅ $IDLE slot is healthy"
+
+            # ── [7] Traffic cutover ──────────────────────────────────────────
+            if [ "$CANARY_WEIGHT" -gt 0 ] && [ "$CANARY_WEIGHT" -lt 100 ]; then
+              # ── Canary: split traffic ──────────────────────────────────────
+              echo "[5/7] Canary mode: ${CANARY_WEIGHT}% → $IDLE, $(( 100 - CANARY_WEIGHT ))% → $ACTIVE"
+              ACTIVE_SLOT="$ACTIVE" \
+              IDLE_SLOT="$IDLE" \
+              CANARY_WEIGHT="$CANARY_WEIGHT" \
+              envsubst < "$DEPLOY_PATH/nginx/conf.d/canary.conf.template" \
+                > "$DEPLOY_PATH/nginx/conf.d/app.conf"
+              docker exec crm_nginx nginx -s reload
+              echo "  ✅ Canary traffic shifted"
+              echo "  ℹ️  Monitor Grafana, then re-run CD with canary_weight=100 to promote"
+              # Record canary state — do NOT update .active_slot yet
+              echo "$IDLE" > /opt/crm/.canary_slot
+              exit 0
+            else
+              # ── Full cutover (blue-green) ──────────────────────────────────
+              echo "[5/7] Full cutover: all traffic → $IDLE"
+              ACTIVE_SLOT="$IDLE" \
+              envsubst < "$DEPLOY_PATH/nginx/conf.d/single-slot.conf.template" \
+                > "$DEPLOY_PATH/nginx/conf.d/app.conf"
+              docker exec crm_nginx nginx -s reload
+              echo "  ✅ Traffic switched to $IDLE"
+            fi
+
+            # ── [8] Post-cutover health validation ───────────────────────────
+            echo "[6/7] Validating production endpoint"
+            bash "$DEPLOY_PATH/deploy/health-check-prod.sh" 30 5
+            echo "  ✅ Production endpoint healthy"
+
+            # ── [9] Tear down old slot ───────────────────────────────────────
+            echo "[7/7] Stopping old $ACTIVE slot"
+            docker compose \
+              -f docker-compose.yml \
+              -f "docker-compose.${ACTIVE}.yml" \
+              --project-name "crm-${ACTIVE}" \
+              down --remove-orphans
+
+            # Persist new active slot
+            echo "$IDLE" > /opt/crm/.active_slot
+            rm -f /opt/crm/.canary_slot
+
+            # Clean up dangling images (keep last 3 tags)
+            docker image prune -f --filter "until=72h" || true
+
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo " ✅ Deployment complete — active slot: $IDLE ($IMAGE_TAG)"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            git log -1 --oneline
+
+  # ── Rollback job (manual trigger only) ────────────────────────────────────
+  rollback:
+    name: Emergency Rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.image_tag == 'ROLLBACK'
+    steps:
+      - name: Rollback to previous slot
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          # Optional: restrict to a specific port if your server uses non-standard SSH
-          # port: ${{ secrets.DEPLOY_SSH_PORT }}
+          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
           script: |
-            set -e
+            set -euo pipefail
+            DEPLOY_PATH="${DEPLOY_PATH:-/opt/crm}"
+            cd "$DEPLOY_PATH"
 
-            echo "🚀 Starting deployment..."
+            ACTIVE=$(cat /opt/crm/.active_slot 2>/dev/null || echo "blue")
+            if [ "$ACTIVE" = "blue" ]; then PREV="green"; else PREV="blue"; fi
 
-            echo "[1/8] Go to project directory"
-            cd ${{ secrets.DEPLOY_PATH }}
+            echo "Rolling back from $ACTIVE → $PREV"
 
-            echo "[2/8] Sync latest code"
-            git fetch origin main
-            git reset --hard origin/main
-            git clean -fd
+            # Re-point nginx to the previous slot (it's still running)
+            ACTIVE_SLOT="$PREV" \
+            envsubst < "$DEPLOY_PATH/nginx/conf.d/single-slot.conf.template" \
+              > "$DEPLOY_PATH/nginx/conf.d/app.conf"
+            docker exec crm_nginx nginx -s reload
 
-            echo "[3/8] Backup current images"
-            docker tag crm-with-blockchain-rag-api:latest crm-api-backup || true
-            docker tag crm-with-blockchain-rag-web:latest crm-web-backup || true
-
-            echo "[4/8] Pull latest env from secrets store"
-            # If using AWS Secrets Manager:
-            # aws secretsmanager get-secret-value --secret-id crm/production/.env \
-            #   --query SecretString --output text > .env
-            # If using a secrets file already on server, this step is a no-op.
-
-            echo "[5/8] Build & start containers"
-            docker compose down
-            docker compose up -d --build
-
-            echo "[6/8] Wait for API (via HTTPS + Nginx)"
-            SUCCESS=0
-
-            for i in {1..30}; do
-              if curl -f --max-time 5 https://bestpurchasestore.com/api/v1/health/live > /dev/null 2>&1; then
-                echo "✅ API is healthy"
-                SUCCESS=1
-                break
-              fi
-              echo "⏳ Attempt $i/30 failed... retrying in 5s"
-              sleep 5
-            done
-
-            if [ "$SUCCESS" != "1" ]; then
-              echo "❌ Deployment failed! Starting rollback..."
-
-              echo "[ROLLBACK] Stopping containers"
-              docker compose down
-
-              echo "[ROLLBACK] Restoring previous images"
-              docker tag crm-api-backup crm-with-blockchain-rag-api:latest || true
-              docker tag crm-web-backup crm-with-blockchain-rag-web:latest || true
-
-              echo "[ROLLBACK] Restarting previous version"
-              docker compose up -d
-
-              echo "[ROLLBACK] Logs"
-              docker compose logs --tail=100
-
-              exit 1
-            fi
-
-            echo "[7/8] Cleaning unused Docker resources"
-            docker system prune -af --volumes || true
-
-            echo "[8/8] Status"
-            docker ps
-            git log -1 --oneline
-
-            echo "✅ Deployment completed successfully!"
+            echo "$PREV" > /opt/crm/.active_slot
+            echo "✅ Rollback complete — now serving: $PREV"

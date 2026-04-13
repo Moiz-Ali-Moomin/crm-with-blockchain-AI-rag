@@ -1,352 +1,214 @@
-# Deployment Guide
+# Production Deployment Architecture
 
-## Prerequisites
+## Deployment Flow Diagram
 
-- Ubuntu 22.04 LTS VPS (min 2 vCPU, 4 GB RAM, 40 GB SSD)
-- A domain name pointing to your server's IP (A record)
-- SSH access as root or a sudo user
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          GitHub Actions                                   │
+│                                                                           │
+│  push → main                                                              │
+│     │                                                                     │
+│     ▼                                                                     │
+│  ┌─────────────────────────────────────┐                                 │
+│  │              CI Workflow            │                                  │
+│  │                                     │                                 │
+│  │  backend-quality ──┐                │                                 │
+│  │  backend-tests   ──┼─► build-and   │                                 │
+│  │  frontend-quality──┘    -push       │                                 │
+│  │                          │          │                                 │
+│  │                   ┌──────┴──────┐   │                                 │
+│  │                   │  GHCR       │   │                                 │
+│  │                   │  crm-api:   │   │                                 │
+│  │                   │   sha-abc12 │   │                                 │
+│  │                   │  crm-web:   │   │                                 │
+│  │                   │   sha-abc12 │   │                                 │
+│  │                   └─────────────┘   │                                 │
+│  └─────────────────────────────────────┘                                 │
+│                          │ triggers                                       │
+│                          ▼                                                │
+│  ┌─────────────────────────────────────┐                                 │
+│  │           CD Workflow               │                                 │
+│  │                                     │                                 │
+│  │  1. Resolve image tag (sha-abc12)   │                                 │
+│  │  2. SSH → server                    │                                 │
+│  └─────────────────────────────────────┘                                 │
+└──────────────────────────────────────────────────────────────────────────┘
+                          │ SSH
+                          ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        Hetzner VPS                                        │
+│                                                                           │
+│  ┌──────────┐    ┌───────────────────────────────────────────────────┐  │
+│  │  UFW     │    │                   Docker                           │  │
+│  │  :443    │    │                                                    │  │
+│  │  :80     │    │  ┌─────────────────────────────────────────────┐  │  │
+│  │  :2222   │    │  │              NGINX (single instance)         │  │  │
+│  └──────────┘    │  │              nginx -s reload (zero-downtime) │  │  │
+│                  │  └──────┬──────────────────────┬───────────────┘  │  │
+│                  │         │                       │                   │  │
+│                  │  ┌──────▼──────┐       ┌───────▼──────┐           │  │
+│                  │  │  BLUE slot  │       │  GREEN slot  │           │  │
+│                  │  │             │       │              │           │  │
+│                  │  │ crm_api_blue│       │crm_api_green │           │  │
+│                  │  │ crm_web_blue│       │crm_web_green │           │  │
+│                  │  │  (ACTIVE)   │       │   (IDLE)     │           │  │
+│                  │  └─────────────┘       └──────────────┘           │  │
+│                  │         │                       │                   │  │
+│                  │  ┌──────▼───────────────────────▼───────────────┐  │  │
+│                  │  │          Shared Infrastructure                 │  │  │
+│                  │  │  postgres  │  redis  │  mongodb               │  │  │
+│                  │  └───────────────────────────────────────────────┘  │  │
+│                  │                                                      │  │
+│                  │  ┌───────────────────────────────────────────────┐  │  │
+│                  │  │           Observability                        │  │  │
+│                  │  │  prometheus │ grafana │ loki │ promtail        │  │  │
+│                  │  │  node-exporter │ cadvisor                      │  │  │
+│                  │  └───────────────────────────────────────────────┘  │  │
+│                  └────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────┘
+```
 
----
+## Deploy sequence (step by step)
 
-## 1. Server Setup
+```
+  IDLE slot = green (new version)
+  ACTIVE slot = blue (current version, serving traffic)
+
+  1. CI builds immutable image → sha-abc1234 → pushes to GHCR
+  2. CD pulls sha-abc1234 onto server (no build on server)
+  3. docker compose -f base -f green up -d     (green starts, not yet routed)
+  4. health-check.sh polls green's INTERNAL port until 200
+  5a. [Full deploy] nginx upstream → crm_api_green + crm_web_green → reload
+  5b. [Canary]      nginx upstream → blue:90 + green:10 → reload
+                    Monitor Grafana. Re-run CD with canary_weight=100 to promote.
+  6. prod health check validates public HTTPS endpoint
+  7. docker compose -f base -f blue down       (blue torn down)
+  8. echo "green" > .active_slot
+```
+
+## GitHub Repository Secrets required
+
+| Secret | Value |
+|---|---|
+| `DEPLOY_HOST` | Your VPS IP or hostname |
+| `DEPLOY_USER` | Deploy Linux user (e.g. `deploy`) |
+| `DEPLOY_SSH_KEY` | Private SSH key (the public key is on the server) |
+| `DEPLOY_SSH_PORT` | SSH port (default `2222` after hardening) |
+| `DEPLOY_PATH` | `/opt/crm` |
+| `GHCR_USER` | GitHub username (for `docker login ghcr.io`) |
+| `GHCR_TOKEN` | GitHub PAT with `read:packages` scope |
+| `NEXT_PUBLIC_API_URL` | `https://bestpurchasestore.com` |
+| `NEXT_PUBLIC_APP_URL` | `https://bestpurchasestore.com` |
+
+> These are used **only** at build time for Next.js. Runtime secrets live in
+> `/opt/crm/.secrets` on the server (mode 600, never in git).
+
+## First deploy (bootstrap)
 
 ```bash
-# Update system
-apt update && apt upgrade -y
+# 1. One-time server setup (run as root on the VPS)
+bash deploy/server-setup.sh deploy "ssh-ed25519 AAAA..."
 
-# Install Docker
-curl -fsSL https://get.docker.com | sh
-usermod -aG docker $USER
-newgrp docker
+# 2. Fill in real credentials
+nano /opt/crm/.secrets
 
-# Install Docker Compose plugin
-apt install docker-compose-plugin -y
+# 3. Clone the repo into the deploy path
+cd /opt/crm
+git clone https://github.com/YOUR_ORG/crm-with-blockchain-rag .
 
-# Verify
-docker --version
-docker compose version
+# 4. Start shared infrastructure
+docker compose up -d postgres redis mongodb nginx prometheus grafana loki promtail node-exporter cadvisor postgres-backup
+
+# 5. Generate initial nginx config (blue slot, since that's the default active)
+ACTIVE_SLOT=blue envsubst < nginx/conf.d/single-slot.conf.template > nginx/conf.d/app.conf
+docker exec crm_nginx nginx -s reload
+
+# 6. Push to main - CI builds - CD deploys automatically
 ```
 
----
-
-## 2. Clone the Repository
+## Canary release workflow
 
 ```bash
-git clone https://github.com/your-org/nexus-crm.git /opt/nexus-crm
-cd /opt/nexus-crm
+# Deploy 10% of traffic to new version
+gh workflow run cd.yml \
+  -f image_tag=sha-abc1234 \
+  -f canary_weight=10
+
+# Watch the Grafana deployment dashboard:
+#   https://bestpurchasestore.com/grafana/d/crm-deployment
+
+# If metrics look good, promote to 100%
+gh workflow run cd.yml \
+  -f image_tag=sha-abc1234 \
+  -f canary_weight=100
+
+# If metrics look bad, rollback instantly:
+gh workflow run cd.yml \
+  -f image_tag=ROLLBACK \
+  -f canary_weight=0
 ```
 
----
+## Emergency rollback
 
-## 3. Configure Environment
+Rollback is instantaneous because the previous slot is still running.
+It is just an nginx config swap + reload — no container restarts.
 
 ```bash
-cp crm-backend/.env.example crm-backend/.env
-nano crm-backend/.env
+# Via GitHub Actions UI: run the CD workflow with image_tag=ROLLBACK
+# Or directly on the server:
+ACTIVE=$(cat /opt/crm/.active_slot)
+PREV=$([ "$ACTIVE" = "blue" ] && echo "green" || echo "blue")
+ACTIVE_SLOT=$PREV envsubst < /opt/crm/nginx/conf.d/single-slot.conf.template \
+  > /opt/crm/nginx/conf.d/app.conf
+docker exec crm_nginx nginx -s reload
+echo $PREV > /opt/crm/.active_slot
 ```
 
-**Minimum required for production:**
+## Accessing Grafana
+
+Grafana is NOT exposed publicly. Access via SSH tunnel:
 
 ```bash
-NODE_ENV=production
-PORT=3001
-APP_URL=https://your-domain.com
-API_URL=https://your-domain.com/api
-CORS_ORIGINS=https://your-domain.com
-
-DATABASE_URL=postgresql://crm_user:STRONG_PASSWORD@postgres:5432/crm_db?schema=public
-REDIS_URL=redis://redis:6379
-MONGO_URI=mongodb://crm_mongo:STRONG_PASSWORD@mongodb:27017/crm_logs?authSource=admin
-
-JWT_SECRET=<64-char-random-string>
-JWT_REFRESH_SECRET=<64-char-random-string>
+ssh -L 3000:localhost:3000 -N deploy@bestpurchasestore.com -p 2222
+# then open http://localhost:3000 in your browser
 ```
 
-Generate strong secrets:
-```bash
-openssl rand -hex 32   # run twice — one for JWT_SECRET, one for JWT_REFRESH_SECRET
-```
+Or via the Nginx proxy at `https://bestpurchasestore.com/grafana/`
+(requires adding your IP to an nginx `allow` list for security).
 
----
+## Adding prom-client to the NestJS API
 
-## 4. Nginx Configuration
+The Prometheus scrape config expects `/api/v1/metrics`. Add this to your backend:
 
 ```bash
-mkdir -p nginx/conf.d
+cd crm-backend
+npm install prom-client @willsoto/nestjs-prometheus
 ```
 
-Create `nginx/nginx.conf`:
+```typescript
+// app.module.ts
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 
-```nginx
-user nginx;
-worker_processes auto;
-error_log /var/log/nginx/error.log warn;
-pid /var/run/nginx.pid;
-
-events {
-    worker_connections 1024;
-}
-
-http {
-    include       /etc/nginx/mime.types;
-    default_type  application/octet-stream;
-
-    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                    '$status $body_bytes_sent "$http_referer" '
-                    '"$http_user_agent"';
-
-    access_log /var/log/nginx/access.log main;
-    sendfile on;
-    keepalive_timeout 65;
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-
-    # Gzip
-    gzip on;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
-
-    include /etc/nginx/conf.d/*.conf;
-}
+@Module({
+  imports: [
+    PrometheusModule.register({
+      path: '/api/v1/metrics',
+      defaultMetrics: { enabled: true },
+    }),
+  ],
+})
+export class AppModule {}
 ```
 
-Create `nginx/conf.d/app.conf`:
+## Security checklist
 
-```nginx
-# Redirect HTTP → HTTPS
-server {
-    listen 80;
-    server_name your-domain.com www.your-domain.com;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
-
-# HTTPS
-server {
-    listen 443 ssl http2;
-    server_name your-domain.com www.your-domain.com;
-
-    ssl_certificate     /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
-
-    client_max_body_size 10M;
-
-    # Frontend
-    location / {
-        proxy_pass         http://web:3000;
-        proxy_http_version 1.1;
-        proxy_set_header   Upgrade $http_upgrade;
-        proxy_set_header   Connection 'upgrade';
-        proxy_set_header   Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # Backend API
-    location /api/ {
-        rewrite            ^/api/(.*) /$1 break;
-        proxy_pass         http://api:3001;
-        proxy_http_version 1.1;
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Real-IP $remote_addr;
-        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-    }
-
-    # WebSocket
-    location /socket.io/ {
-        proxy_pass         http://api:3001;
-        proxy_http_version 1.1;
-        proxy_set_header   Upgrade $http_upgrade;
-        proxy_set_header   Connection 'upgrade';
-        proxy_set_header   Host $host;
-        proxy_read_timeout 86400;
-    }
-}
-```
-
----
-
-## 5. SSL with Certbot (First-Time)
-
-```bash
-# Start Nginx on HTTP first (needed for ACME challenge)
-docker compose -f docker-compose.prod.yml up -d nginx
-
-# Issue certificate
-docker compose -f docker-compose.prod.yml run --rm certbot certonly \
-  --webroot \
-  --webroot-path=/var/www/certbot \
-  -d your-domain.com \
-  -d www.your-domain.com \
-  --email admin@your-domain.com \
-  --agree-tos \
-  --no-eff-email
-
-# Reload Nginx with SSL config
-docker compose -f docker-compose.prod.yml restart nginx
-```
-
----
-
-## 6. Start All Services
-
-```bash
-docker compose -f docker-compose.prod.yml up -d --build
-```
-
-Check status:
-```bash
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f api
-```
-
----
-
-## 7. Database Migration & Seed
-
-```bash
-# Run all pending migrations
-docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
-
-# Seed demo data (first run only)
-docker compose -f docker-compose.prod.yml exec api npm run seed
-```
-
----
-
-## 8. Certificate Auto-Renewal
-
-The `certbot` service in `docker-compose.prod.yml` renews automatically every 12 hours.
-
-To force a manual renewal:
-```bash
-docker compose -f docker-compose.prod.yml run --rm certbot renew
-docker compose -f docker-compose.prod.yml restart nginx
-```
-
-Add to server crontab for belt-and-suspenders:
-```bash
-crontab -e
-# Add:
-0 3 * * 1 cd /opt/nexus-crm && docker compose -f docker-compose.prod.yml run --rm certbot renew && docker compose -f docker-compose.prod.yml restart nginx >> /var/log/certbot-renew.log 2>&1
-```
-
----
-
-## 9. Zero-Downtime Updates
-
-Via CI/CD (recommended):
-```bash
-# Just merge to main — GitHub Actions handles the rest
-```
-
-Manual update:
-```bash
-cd /opt/nexus-crm
-git pull origin main
-
-docker compose -f docker-compose.prod.yml pull api web
-docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans
-docker compose -f docker-compose.prod.yml exec -T api npx prisma migrate deploy
-docker image prune -f
-```
-
----
-
-## 10. Database Backups
-
-### Automated daily backup
-
-```bash
-# /opt/backups/backup-db.sh
-#!/bin/bash
-set -e
-
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR=/opt/backups/postgres
-mkdir -p $BACKUP_DIR
-
-docker compose -f /opt/nexus-crm/docker-compose.prod.yml exec -T postgres \
-  pg_dump -U crm_user crm_db | gzip > "$BACKUP_DIR/crm_db_$TIMESTAMP.sql.gz"
-
-# Keep 30 days of backups
-find $BACKUP_DIR -name "*.sql.gz" -mtime +30 -delete
-
-echo "Backup complete: crm_db_$TIMESTAMP.sql.gz"
-```
-
-```bash
-chmod +x /opt/backups/backup-db.sh
-crontab -e
-# Add:
-0 2 * * * /opt/backups/backup-db.sh >> /var/log/crm-backup.log 2>&1
-```
-
-### Restore from backup
-
-```bash
-gunzip -c /opt/backups/postgres/crm_db_20260401_020000.sql.gz | \
-  docker compose -f docker-compose.prod.yml exec -T postgres \
-  psql -U crm_user -d crm_db
-```
-
----
-
-## 11. Monitoring
-
-### Health endpoint
-
-```bash
-curl https://your-domain.com/api/health
-# {"status":"ok","info":{...}}
-```
-
-### Container resource usage
-
-```bash
-docker stats --no-stream
-```
-
-### Logs
-
-```bash
-# All services
-docker compose -f docker-compose.prod.yml logs -f
-
-# Specific service
-docker compose -f docker-compose.prod.yml logs -f api
-docker compose -f docker-compose.prod.yml logs -f web
-```
-
----
-
-## 12. Useful Commands
-
-```bash
-# Restart a single service without downtime
-docker compose -f docker-compose.prod.yml restart api
-
-# Enter running container
-docker compose -f docker-compose.prod.yml exec api sh
-
-# Run Prisma Studio (temporarily, remove after use)
-docker compose -f docker-compose.prod.yml exec api npx prisma studio
-
-# Check Redis
-docker compose -f docker-compose.prod.yml exec redis redis-cli ping
-docker compose -f docker-compose.prod.yml exec redis redis-cli info memory
-
-# Tail all worker logs
-docker compose -f docker-compose.prod.yml logs -f api | grep -E "Worker|Queue"
-```
+- [ ] SSH port changed to 2222, password auth disabled
+- [ ] UFW: only ports 80, 443, 2222 open
+- [ ] Fail2ban running (`systemctl status fail2ban`)
+- [ ] `/opt/crm/.secrets` is mode 600
+- [ ] Grafana not exposed publicly (SSH tunnel or IP allowlist)
+- [ ] Prometheus not exposed publicly
+- [ ] Containers run as non-root (already in Dockerfiles)
+- [ ] Docker `no-new-privileges: true` in daemon.json
+- [ ] GHCR images are private (default for org repos)
+- [ ] HSTS enabled in nginx
