@@ -152,24 +152,23 @@ jobs:
             # ── [6] Health-gate new slot ─────────────────────────────────────
             # WHY: we do NOT cut over traffic until we have confirmed the new
             # slot is healthy. This is the core zero-downtime guarantee.
-            # Port offsets: blue=3001/3000, green=3011/3010 (internal only)
-            if [ "$IDLE" = "green" ]; then
-              API_PORT=3011
-            else
-              API_PORT=3001
-            fi
+            # Containers use `expose` not `ports` — health check runs via
+            # docker exec inside the container, not via a host-bound port.
+            IDLE_CONTAINER="crm_api_${IDLE}"
 
-            echo "[4/7] Health-checking $IDLE slot on internal port $API_PORT"
-            bash "$DEPLOY_PATH/deploy/health-check.sh" "$API_PORT" 60 5
+            echo "[4/7] Health-checking $IDLE slot (container: $IDLE_CONTAINER)"
+            bash "$DEPLOY_PATH/deploy/health-check.sh" "$IDLE_CONTAINER" 60 5
             echo "  ✅ $IDLE slot is healthy"
 
             # ── [7] Traffic cutover ──────────────────────────────────────────
             if [ "$CANARY_WEIGHT" -gt 0 ] && [ "$CANARY_WEIGHT" -lt 100 ]; then
               # ── Canary: split traffic ──────────────────────────────────────
-              echo "[5/7] Canary mode: ${CANARY_WEIGHT}% → $IDLE, $(( 100 - CANARY_WEIGHT ))% → $ACTIVE"
+              ACTIVE_WEIGHT=$(( 100 - CANARY_WEIGHT ))
+              echo "[5/7] Canary mode: ${CANARY_WEIGHT}% → $IDLE, ${ACTIVE_WEIGHT}% → $ACTIVE"
               ACTIVE_SLOT="$ACTIVE" \
               IDLE_SLOT="$IDLE" \
               CANARY_WEIGHT="$CANARY_WEIGHT" \
+              ACTIVE_WEIGHT="$ACTIVE_WEIGHT" \
               envsubst < "$DEPLOY_PATH/nginx/conf.d/canary.conf.template" \
                 > "$DEPLOY_PATH/nginx/conf.d/app.conf"
               docker exec crm_nginx nginx -s reload
