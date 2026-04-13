@@ -21,13 +21,6 @@ services:
       PORT: 3001
       API_VERSION: v1
       SLOT: blue
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
     networks:
       - crm_internal
     expose:

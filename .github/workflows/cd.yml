@@ -103,7 +103,7 @@ jobs:
             # Repo is public — no auth needed for fetch.
             git remote set-url origin "https://github.com/${GIT_REPO}.git"
             git fetch origin main --quiet
-            git checkout origin/main -- deploy/ nginx/ docker-compose.yml docker-compose.blue.yml docker-compose.green.yml
+            git checkout origin/main -- deploy/ nginx/ observability/ docker-compose.yml docker-compose.blue.yml docker-compose.green.yml
 
             # ── [1] Authenticate to GHCR ────────────────────────────────────
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
@@ -136,14 +136,29 @@ jobs:
               echo "ERROR: "$DEPLOY_PATH"/.secrets not found — provision it first" && exit 1
             fi
 
-            # ── [5] Start idle slot with new image ──────────────────────────
+            # ── [5a] Ensure shared infra is up ───────────────────────────────
+            # WHY: networks (crm_internal, crm_public) and stateful services
+            # (postgres, redis, mongodb, nginx, observability) are defined in
+            # docker-compose.yml and must exist before slot containers start.
+            # --no-recreate makes this idempotent — running containers are untouched.
+            echo "[3/7] Ensuring shared infra is up"
+            docker compose \
+              -f docker-compose.yml \
+              --project-name "crm-infra" \
+              --env-file "$DEPLOY_PATH"/.secrets \
+              up -d --no-recreate --no-build --pull missing
+
+            # ── [5b] Start idle slot with new image ──────────────────────────
+            # WHY only the slot file: docker-compose.yml defines shared infra
+            # (postgres, redis, nginx) already managed by crm-infra. Including
+            # it here would cause container name conflicts. The slot files declare
+            # crm_internal/crm_public as external, so they join the existing networks.
             echo "[3/7] Starting $IDLE slot with tag $IMAGE_TAG"
             IMAGE_API="${IMAGE_API}" \
             IMAGE_WEB="${IMAGE_WEB}" \
             IMAGE_TAG="${IMAGE_TAG}" \
             SLOT="${IDLE}" \
             docker compose \
-              -f docker-compose.yml \
               -f "docker-compose.${IDLE}.yml" \
               --project-name "crm-${IDLE}" \
               --env-file "$DEPLOY_PATH"/.secrets \
@@ -169,7 +184,8 @@ jobs:
               IDLE_SLOT="$IDLE" \
               CANARY_WEIGHT="$CANARY_WEIGHT" \
               ACTIVE_WEIGHT="$ACTIVE_WEIGHT" \
-              envsubst < "$DEPLOY_PATH/nginx/conf.d/canary.conf.template" \
+              envsubst '${ACTIVE_SLOT} ${IDLE_SLOT} ${CANARY_WEIGHT} ${ACTIVE_WEIGHT}' \
+                < "$DEPLOY_PATH/nginx/conf.d/canary.conf.template" \
                 > "$DEPLOY_PATH/nginx/conf.d/app.conf"
               docker exec crm_nginx nginx -s reload
               echo "  ✅ Canary traffic shifted"
@@ -181,7 +197,8 @@ jobs:
               # ── Full cutover (blue-green) ──────────────────────────────────
               echo "[5/7] Full cutover: all traffic → $IDLE"
               ACTIVE_SLOT="$IDLE" \
-              envsubst < "$DEPLOY_PATH/nginx/conf.d/single-slot.conf.template" \
+              envsubst '${ACTIVE_SLOT}' \
+                < "$DEPLOY_PATH/nginx/conf.d/single-slot.conf.template" \
                 > "$DEPLOY_PATH/nginx/conf.d/app.conf"
               docker exec crm_nginx nginx -s reload
               echo "  ✅ Traffic switched to $IDLE"
@@ -195,10 +212,9 @@ jobs:
             # ── [9] Tear down old slot ───────────────────────────────────────
             echo "[7/7] Stopping old $ACTIVE slot"
             docker compose \
-              -f docker-compose.yml \
               -f "docker-compose.${ACTIVE}.yml" \
               --project-name "crm-${ACTIVE}" \
-              down --remove-orphans
+              down --remove-orphans || true
 
             # Persist new active slot
             echo "$IDLE" > "$DEPLOY_PATH"/.active_slot
@@ -243,7 +259,8 @@ jobs:
 
             # Re-point nginx to the previous slot (it's still running)
             ACTIVE_SLOT="$PREV" \
-            envsubst < "$DEPLOY_PATH/nginx/conf.d/single-slot.conf.template" \
+            envsubst '${ACTIVE_SLOT}' \
+              < "$DEPLOY_PATH/nginx/conf.d/single-slot.conf.template" \
               > "$DEPLOY_PATH/nginx/conf.d/app.conf"
             docker exec crm_nginx nginx -s reload
 

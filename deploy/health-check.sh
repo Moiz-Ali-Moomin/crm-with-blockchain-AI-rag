@@ -21,17 +21,16 @@ echo "  Health check: docker exec ${CONTAINER} wget /api/v1/health/live"
 echo "  Max attempts: $MAX, interval: ${SLEEP}s"
 
 for i in $(seq 1 "$MAX"); do
-  STATUS=$(docker exec "$CONTAINER" \
-    wget -qO- --server-response \
-    "http://127.0.0.1:3001/api/v1/health/live" 2>&1 \
-    | awk '/HTTP\//{print $2}' | tail -1 || echo "000")
-
-  if [ "$STATUS" = "200" ]; then
+  # wget -q --spider exits 0 on HTTP 2xx, non-zero otherwise.
+  # Works on both busybox wget (Alpine) and GNU wget.
+  if docker exec "$CONTAINER" \
+      wget -q --spider --timeout=5 \
+      "http://127.0.0.1:3001/api/v1/health/live" 2>/dev/null; then
     echo "  ✅ Healthy (attempt $i/$MAX)"
     exit 0
   fi
 
-  echo "  ⏳ Attempt $i/$MAX — HTTP $STATUS — retrying in ${SLEEP}s..."
+  echo "  ⏳ Attempt $i/$MAX — not ready — retrying in ${SLEEP}s..."
   sleep "$SLEEP"
 done
 
