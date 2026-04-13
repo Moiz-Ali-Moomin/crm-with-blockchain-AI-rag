@@ -378,7 +378,7 @@
     <span>Last updated: 2026-04-14</span>
     <span>Auditor: Claude Code (claude-sonnet-4-6)</span>
     <span>Project: crm-with-blockchain-rag</span>
-    <span>10 code bugs · 8 deployment incidents</span>
+    <span>10 code bugs · 9 deployment incidents</span>
   </p>
 </header>
 
@@ -1444,6 +1444,123 @@ docker exec crm_nginx nginx -s reload</pre>
       <div class="fix-block">
         <p class="field-label">Result</p>
         <p class="field-value">Rollback is now safe-to-trigger. It will only redirect traffic if the target slot is confirmed running. If the previous slot is gone (torn down after a successful deploy) it fails with a clear error rather than creating an outage. Config is validated with <code>nginx -t</code> before reload.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- INC-09 -->
+  <div class="incident-card">
+    <div class="incident-header">
+      <span class="bug-id">INC-09</span>
+      <div class="incident-meta">
+        <div class="incident-title">Smoke test crashes at startup — <code>localhost:5432</code> unreachable inside Docker container</div>
+        <div class="incident-subtitle">
+          Date: 2026-04-14 · File: .github/workflows/ci.yml (build-and-push / smoke test step) · Type: CI networking / DB connectivity
+        </div>
+      </div>
+      <span class="incident-pill">⚠ Pipeline Bug</span>
+    </div>
+
+    <div class="incident-body">
+
+      <div>
+        <p class="field-label">Error</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">API container stdout — startup crash</div>
+          <pre><span class="hl">Error: P1001: Can't reach database server at `localhost:5432`</span>
+Please make sure your database server is running at `localhost:5432`.</pre>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <p class="field-label">Root cause — three compounding issues</p>
+          <p class="field-value">
+            <strong>1. Wrong hostname.</strong> The smoke test passed <code>DATABASE_URL=postgresql://dummy:dummy@localhost:5432/dummy</code>. Inside a Docker container, <code>localhost</code> resolves to the container's own loopback interface — not the runner host, not any sibling container. There is no Postgres process inside the API container, so the connect attempt fails immediately.<br><br>
+            <strong>2. Bootstrap-time connection.</strong> <code>PrismaService.onModuleInit()</code> calls <code>await this.$connect()</code>. NestJS runs all <code>OnModuleInit</code> hooks during application bootstrap, before binding the HTTP port. The process crashes before port 3001 is even open, so <code>/health/live</code> is never reachable regardless of wait time.<br><br>
+            <strong>3. Wrong Postgres image.</strong> The schema declares <code>extensions = [pgvector(map: "vector")]</code>. <code>prisma migrate deploy</code> executes <code>CREATE EXTENSION vector</code> — a statement that requires the pgvector shared library. Plain <code>postgres:16</code> does not ship it. Migrations fail with <em>"could not open extension control file"</em> if the wrong image is used.
+          </p>
+        </div>
+        <div>
+          <p class="field-label">Impact</p>
+          <p class="field-value">Every push to <code>main</code> fails at the smoke test step. The image is pushed to GHCR (build succeeds) but CI exits non-zero, blocking CD from triggering. The pipeline was effectively dead on main after the smoke test was introduced.</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Fix applied — real Postgres on a shared Docker network</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">ci.yml — smoke test (new, key steps)</div>
+          <pre><span class="comment"># [1] Isolated bridge network — containers resolve each other by --name</span>
+docker network create smoke_net
+
+<span class="comment"># [2] pgvector image — required for CREATE EXTENSION vector in migrations</span>
+docker run -d --name smoke_postgres --network smoke_net \
+  -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test \
+  pgvector/pgvector:pg16
+
+<span class="comment"># [3] Wait for Postgres (pg_isready inside the container — no host psql needed)</span>
+docker exec smoke_postgres pg_isready -U test -d test -q
+
+<span class="comment"># [4] Run migrations from the built image — same artifact as deploy</span>
+docker run --rm --network smoke_net \
+  -e DATABASE_URL=<span class="str">"postgresql://test:test@smoke_postgres:5432/test"</span> \
+  --entrypoint npx "${IMAGE_API}:${IMAGE_TAG}" prisma migrate deploy
+
+<span class="comment"># [5] Start API — hostname "smoke_postgres" resolves inside smoke_net</span>
+docker run -d --name smoke_api --network smoke_net \
+  -e DATABASE_URL=<span class="str">"postgresql://test:test@smoke_postgres:5432/test"</span> \
+  -e JWT_SECRET=<span class="str">"ci-smoke-test-not-for-prod-pad-to-32-chars"</span> \
+  -e JWT_REFRESH_SECRET=<span class="str">"ci-smoke-refresh-not-for-prod-pad-32c"</span> \
+  -p 3001:3001 "${IMAGE_API}:${IMAGE_TAG}"
+
+<span class="comment"># [6] curl from host via mapped port — validates full network stack</span>
+curl -sf http://localhost:3001/api/v1/health/live</pre>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Why each decision was made</p>
+        <div class="root-cause-chain" style="margin-top:8px;">
+          <div class="rca-step">
+            <div class="rca-num">1</div>
+            <p><strong>Named Docker network, not GitHub Actions <code>services:</code></strong> — GitHub services are reachable from the runner host at <code>localhost:&lt;port&gt;</code>, but NOT from inside another Docker container. A shared bridge network lets containers find each other by <code>--name</code>, which is how production networking works.</p>
+          </div>
+          <div class="rca-step">
+            <div class="rca-num">2</div>
+            <p><strong><code>pgvector/pgvector:pg16</code> not <code>postgres:16</code></strong> — <code>schema.prisma</code> declares <code>extensions = [pgvector]</code>. <code>prisma migrate deploy</code> runs <code>CREATE EXTENSION vector</code>. The pgvector shared library (<code>vector.so</code>) is not present in the official Postgres image. Using the wrong image causes a migration failure, not a connect failure — a different and harder-to-diagnose error.</p>
+          </div>
+          <div class="rca-step">
+            <div class="rca-num">3</div>
+            <p><strong>Migrations run from the built image</strong> — <code>docker run --rm --entrypoint npx &lt;image&gt; prisma migrate deploy</code> uses the exact migration files baked into the CI artifact. This catches schema drift and broken migrations before the image reaches the server.</p>
+          </div>
+          <div class="rca-step">
+            <div class="rca-num">4</div>
+            <p><strong>curl from host via <code>-p 3001:3001</code></strong> — exercises the container's port binding and the kernel's TCP listen backlog. More realistic than <code>docker exec wget 127.0.0.1</code> which bypasses all of that and can return 200 even when external connectivity is broken.</p>
+          </div>
+          <div class="rca-step">
+            <div class="rca-num">5</div>
+            <p><strong>Both <code>/health/live</code> and <code>/health/ready</code> probed</strong> — <code>/live</code> is the gate (process up, port bound). <code>/ready</code> confirms Prisma can actually query the test DB after migrations. A warning (not a failure) is logged if <code>/ready</code> is non-200 so it doesn't mask unrelated issues.</p>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Correct DATABASE_URL for smoke test context</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">DATABASE_URL — inside Docker container on smoke_net</div>
+          <pre><span class="comment"># hostname = container --name, resolved by Docker embedded DNS on smoke_net</span>
+DATABASE_URL=<span class="str">"postgresql://test:test@smoke_postgres:5432/test"</span>
+
+<span class="comment"># WRONG — "localhost" inside a container = container loopback, not host</span>
+<span class="hl">DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"  ← broken</span></pre>
+        </div>
+      </div>
+
+      <div class="fix-block">
+        <p class="field-label">Result</p>
+        <p class="field-value">The smoke test now starts a real Postgres, applies migrations, boots the API, and validates both <code>/health/live</code> (process up) and <code>/health/ready</code> (DB connected). A broken image — startup crash, bad env, failed migration, broken health endpoint — is caught in CI before the image is ever consumed by CD. On failure, both API and Postgres logs are dumped for fast diagnosis.</p>
       </div>
 
     </div>

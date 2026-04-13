@@ -251,53 +251,142 @@ jobs:
           cache-to: type=gha,mode=max,scope=web
 
       # ── Runtime smoke test ────────────────────────────────────────────────
-      # WHY: a successful docker build does NOT mean the container actually
-      # starts and serves requests. This step catches startup crashes, missing
-      # env vars, and broken health endpoints BEFORE the image is promoted to CD.
-      # We use a minimal env so the API can boot without a real database — the
-      # /api/v1/health/live endpoint must return 200 with only process-level deps.
+      # WHY a real Postgres, not a dummy URL:
+      #   PrismaService.onModuleInit() calls $connect() — this runs at NestJS
+      #   bootstrap, before any request is served. A bad DATABASE_URL makes the
+      #   process exit before it can bind port 3001, so /health/live is never
+      #   reachable regardless of how long we wait.
+      #
+      # WHY pgvector/pgvector:pg16, not postgres:16:
+      #   The schema declares `extensions = [pgvector(map: "vector")]`.
+      #   prisma migrate deploy will execute CREATE EXTENSION vector, which
+      #   requires the pgvector shared library. Plain postgres:16 does not ship it.
+      #
+      # WHY a named Docker network (not --network host or GitHub services):
+      #   The API runs inside a Docker container. From inside that container,
+      #   "localhost" means the container itself — not the host or any sibling.
+      #   GitHub Actions `services:` sidecars are reachable from the runner host
+      #   at localhost:<mapped-port>, but NOT from inside another container.
+      #   A shared named network lets containers resolve each other by --name.
       - name: Runtime smoke test — API
         env:
           IMAGE_API: ${{ steps.image-names.outputs.image_api }}
           IMAGE_TAG: ${{ steps.meta.outputs.version }}
         run: |
-          echo "Starting API container for smoke test..."
+          set -euo pipefail
+
+          # ── [1] Create an isolated bridge network for this smoke test ─────────
+          # All containers join it; they resolve each other by container --name.
+          docker network create smoke_net
+
+          # ── [2] Start Postgres (pgvector build — required by schema extension) ─
+          # WHY pgvector image: schema.prisma declares `extensions = [pgvector]`.
+          # prisma migrate deploy runs CREATE EXTENSION vector at migration time;
+          # plain postgres:16 does not ship the .so and the migration fails.
+          docker run -d \
+            --name smoke_postgres \
+            --network smoke_net \
+            -e POSTGRES_USER=test \
+            -e POSTGRES_PASSWORD=test \
+            -e POSTGRES_DB=test \
+            pgvector/pgvector:pg16
+
+          # ── [3] Wait for Postgres to accept connections ────────────────────────
+          # pg_isready probes the TCP port; we run it inside the same container
+          # to avoid needing a host-side psql install.
+          echo "Waiting for Postgres to be ready..."
+          for i in $(seq 1 20); do
+            if docker exec smoke_postgres pg_isready -U test -d test -q 2>/dev/null; then
+              echo "  OK: Postgres ready (attempt $i/20)"
+              break
+            fi
+            if [ "$i" = "20" ]; then
+              echo "  FAIL: Postgres did not become ready in time"
+              docker logs smoke_postgres --tail 30
+              exit 1
+            fi
+            echo "  attempt $i/20 — not ready yet, retrying in 3s..."
+            sleep 3
+          done
+
+          # ── [4] Run Prisma migrations against the test DB ─────────────────────
+          # WHY: $connect() alone does not fail on a missing schema — it's the
+          # first real query that hits a missing table. Running migrate deploy
+          # ensures the schema is applied so /health/ready also passes, and
+          # confirms migrations themselves are not broken.
+          # We run this from the image itself so the migration files are exactly
+          # what was built into the artifact — no host-side node_modules needed.
+          echo "Running Prisma migrations..."
+          docker run --rm \
+            --network smoke_net \
+            -e DATABASE_URL="postgresql://test:test@smoke_postgres:5432/test" \
+            --entrypoint npx \
+            "${IMAGE_API}:${IMAGE_TAG}" \
+            prisma migrate deploy
+
+          # ── [5] Start the API container ───────────────────────────────────────
+          # Minimal required env (from env.validation.ts — Zod enforces these):
+          #   DATABASE_URL  — valid URL, reachable postgres
+          #   JWT_SECRET    — min 32 chars
+          #   JWT_REFRESH_SECRET — min 32 chars
+          # Optional vars (sendgrid, stripe, twilio, etc.) are all z.optional()
+          # and will not cause a startup crash when absent.
           docker run -d \
             --name smoke_api \
-            --health-cmd "wget -qO- http://127.0.0.1:3001/api/v1/health/live || exit 1" \
-            --health-interval 5s \
-            --health-timeout 5s \
-            --health-retries 12 \
-            --health-start-period 20s \
+            --network smoke_net \
             -e NODE_ENV=production \
             -e PORT=3001 \
-            -e DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" \
+            -e DATABASE_URL="postgresql://test:test@smoke_postgres:5432/test" \
             -e REDIS_URL="redis://localhost:6379" \
-            -e JWT_SECRET="ci-smoke-test-secret-not-for-prod" \
+            -e JWT_SECRET="ci-smoke-test-not-for-prod-pad-to-32-chars" \
+            -e JWT_REFRESH_SECRET="ci-smoke-refresh-not-for-prod-pad-32c" \
             -p 3001:3001 \
             "${IMAGE_API}:${IMAGE_TAG}"
 
-          echo "Waiting for API health check to pass (max 90s)..."
+          # ── [6] Poll /health/live via the host-mapped port ────────────────────
+          # WHY /health/live not /health/ready:
+          #   /live returns {status:"ok"} with zero external dependencies.
+          #   /ready runs a Prisma ping — valid to test here since migrations ran,
+          #   but /live failing means the process itself didn't boot. Gate on /live
+          #   first; /ready is verified separately in the post-cutover prod check.
+          # WHY curl from the host (not docker exec):
+          #   Container port 3001 is mapped to host 3001 via -p. curl from the
+          #   runner host exercises the full network stack (port binding, listen
+          #   backlog) — a more realistic signal than exec-inside-container wget.
+          echo "Polling /api/v1/health/live (max 90s)..."
           for i in $(seq 1 18); do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' smoke_api 2>/dev/null || echo "missing")
-            echo "  attempt $i/18 — status: $STATUS"
-            if [ "$STATUS" = "healthy" ]; then
-              echo "  PASS: API container is healthy"
-              docker rm -f smoke_api
+            HTTP_STATUS=$(curl -sf --max-time 5 \
+              -o /dev/null -w "%{http_code}" \
+              http://localhost:3001/api/v1/health/live 2>/dev/null || echo "000")
+
+            echo "  attempt $i/18 — HTTP $HTTP_STATUS"
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "  PASS: /health/live returned 200"
+
+              # ── Also verify /health/ready (DB connectivity) ──────────────────
+              READY_STATUS=$(curl -sf --max-time 10 \
+                -o /dev/null -w "%{http_code}" \
+                http://localhost:3001/api/v1/health/ready 2>/dev/null || echo "000")
+              echo "  /health/ready → HTTP $READY_STATUS"
+              if [ "$READY_STATUS" != "200" ]; then
+                echo "  WARN: /health/ready did not return 200 — dumping logs"
+                docker logs smoke_api --tail 30
+              fi
+
+              docker rm -f smoke_api smoke_postgres
+              docker network rm smoke_net
               exit 0
             fi
-            if [ "$STATUS" = "unhealthy" ]; then
-              echo "  FAIL: API container is unhealthy"
-              echo "--- Container logs ---"
-              docker logs smoke_api --tail 50
-              docker rm -f smoke_api
-              exit 1
-            fi
+
             sleep 5
           done
 
-          echo "  FAIL: health check timed out after 90s"
-          echo "--- Container logs ---"
-          docker logs smoke_api --tail 50
-          docker rm -f smoke_api
+          echo "  FAIL: /health/live did not return 200 within 90s"
+          echo "--- API logs ---"
+          docker logs smoke_api --tail 60
+          echo "--- Postgres logs ---"
+          docker logs smoke_postgres --tail 20
+          docker rm -f smoke_api smoke_postgres || true
+          docker network rm smoke_net || true
           exit 1
