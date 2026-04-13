@@ -70,7 +70,14 @@ describe('RagService', () => {
           provide: ConfigService,
           useValue: {
             getOrThrow: jest.fn().mockReturnValue('sk-test-key'),
-            get: jest.fn().mockReturnValue(undefined),
+            // Return a truthy value for OPENAI_API_KEY so the guard in query()
+            // passes. The real key is never sent anywhere — openai is fully
+            // mocked via jest.mock('openai') at the top of this file.
+            // All other keys return undefined (correct — they are not used by RagService).
+            get: jest.fn().mockImplementation((key: string) => {
+              if (key === 'OPENAI_API_KEY') return 'sk-test-key';
+              return undefined;
+            }),
           },
         },
         { provide: VectorSearchService, useValue: mockVectorSearch },

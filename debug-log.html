@@ -378,7 +378,7 @@
     <span>Last updated: 2026-04-14</span>
     <span>Auditor: Claude Code (claude-sonnet-4-6)</span>
     <span>Project: crm-with-blockchain-rag</span>
-    <span>10 code bugs · 11 deployment incidents</span>
+    <span>10 code bugs · 12 deployment incidents</span>
   </p>
 </header>
 
@@ -1847,6 +1847,93 @@ async <span class="fn">query</span>(params) {
       <div class="fix-block">
         <p class="field-label">Result</p>
         <p class="field-value">All 26 previously failing tests pass. The guard now fires only when the LLM is about to be called without a configured key — the only case where it produces a meaningful error. Cache hits, no-chunk responses, and audit log writes are unaffected.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- INC-12 -->
+  <div class="incident-card">
+    <div class="incident-header">
+      <span class="bug-id">INC-12</span>
+      <div class="incident-meta">
+        <div class="incident-title">12 remaining unit tests fail — <code>ConfigService.get</code> mock returns <code>undefined</code> for all keys, including <code>OPENAI_API_KEY</code></div>
+        <div class="incident-subtitle">
+          Date: 2026-04-14 · File: src/modules/ai/rag.service.spec.ts · Type: Test mock contract / incomplete stub
+        </div>
+      </div>
+      <span class="incident-pill">⚠ Test Regression</span>
+    </div>
+
+    <div class="incident-body">
+
+      <div>
+        <p class="field-label">Error</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">Jest — happy path + context window tests (12 failures)</div>
+          <pre><span class="hl">RAG queries are unavailable: OPENAI_API_KEY is not configured.</span>
+  at RagService.query (modules/ai/rag.service.ts:176:13)
+
+Tests: 12 failed, 149 passed, 161 total</pre>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <p class="field-label">Root cause</p>
+          <p class="field-value">
+            The spec's <code>ConfigService</code> mock (line 73) defined <code>get</code> as <code>jest.fn().mockReturnValue(undefined)</code> — a blanket stub returning <code>undefined</code> for every key. The INC-11 fix correctly moved the <code>OPENAI_API_KEY</code> guard to just before <code>openai.chat.completions.create()</code>. That guard now fires for the 12 <em>happy path</em> tests (the ones that do reach the LLM call), because <code>config.get('OPENAI_API_KEY')</code> returns <code>undefined</code> from the mock.<br><br>
+            The original blanket <code>undefined</code> was written before the guard existed. It was never wrong before — <code>get</code> wasn't called for key-checking purposes in the old code. Now it is.
+          </p>
+        </div>
+        <div>
+          <p class="field-label">Why the mock, not the service, is wrong</p>
+          <p class="field-value">
+            <code>jest.mock('openai')</code> replaces the entire OpenAI SDK — no real HTTP call is ever made regardless of the key value. The guard's sole job is to give a human-readable error when the feature is genuinely misconfigured at runtime. In tests, that condition should not be simulated for the happy-path suite. The service logic is correct; the mock simply needs to reflect the configuration state those tests intend to test: "OPENAI_API_KEY is present."
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Fix — <code>mockImplementation</code> instead of blanket <code>mockReturnValue</code></p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">rag.service.spec.ts — ConfigService mock (fixed)</div>
+          <pre><span class="comment">// Before — blanket undefined for every key</span>
+<span class="hl">get: jest.fn().mockReturnValue(undefined),</span>
+
+<span class="comment">// After — returns a truthy value for OPENAI_API_KEY, undefined for everything else</span>
+get: jest.fn().<span class="fn">mockImplementation</span>((key: <span class="cls">string</span>) => {
+  if (key === <span class="str">'OPENAI_API_KEY'</span>) return <span class="str">'sk-test-key'</span>;
+  return undefined;
+}),</pre>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Why each test group is or is not affected</p>
+        <div class="root-cause-chain" style="margin-top:8px;">
+          <div class="rca-step">
+            <div class="rca-num">1</div>
+            <p><strong>cache hit (5 tests)</strong> — <code>redis.get</code> returns a value → early return before the guard. <code>OPENAI_API_KEY</code> never checked. These passed in INC-11 run and continue to pass.</p>
+          </div>
+          <div class="rca-step">
+            <div class="rca-num">2</div>
+            <p><strong>no chunks (5 tests)</strong> — <code>vectorSearch.search</code> returns <code>[]</code> → early return before the guard. These also passed in INC-11 and continue to pass.</p>
+          </div>
+          <div class="rca-step">
+            <div class="rca-num">3</div>
+            <p><strong>happy path + context window (12 tests)</strong> — chunks are found → execution reaches the guard → <code>config.get('OPENAI_API_KEY')</code> returns <code>undefined</code> from the blanket mock → throws. These are the 12 failures fixed by the mock correction.</p>
+          </div>
+          <div class="rca-step">
+            <div class="rca-num">4</div>
+            <p><strong>audit log resilience (1 test)</strong> — no-chunk path, early return. Unaffected.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="fix-block">
+        <p class="field-label">Result</p>
+        <p class="field-value">All 26 <code>RagService</code> tests pass. The mock now accurately represents two distinct config states: <code>OPENAI_API_KEY</code> present (happy-path tests), and all other keys absent (correct — <code>RagService</code> reads no other config keys). The guard in production remains unchanged and still protects against genuinely unconfigured deployments.</p>
       </div>
 
     </div>
