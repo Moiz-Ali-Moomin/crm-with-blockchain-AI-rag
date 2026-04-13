@@ -28,8 +28,6 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_API: ghcr.io/${{ github.repository_owner }}/crm-api
-  IMAGE_WEB: ghcr.io/${{ github.repository_owner }}/crm-web
 
 jobs:
   deploy:
@@ -46,13 +44,17 @@ jobs:
       )
 
     steps:
-      # ── Resolve image tag ─────────────────────────────────────────────────
-      # WHY: the CD must know EXACTLY which image to deploy. Using the git SHA
-      # from the triggering workflow run guarantees we deploy the artifact that
-      # passed CI — not whatever happens to be tagged "latest" at deploy time.
+      # ── Resolve image names + tag ─────────────────────────────────────────
+      # WHY: github.repository_owner preserves original casing; Docker requires
+      # lowercase image names. We lowercase the owner once here and pass the
+      # resolved values forward so every step uses the same reference.
       - name: Resolve image tag
         id: resolve
         run: |
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "image_api=ghcr.io/${OWNER_LC}/crm-api" >> "$GITHUB_OUTPUT"
+          echo "image_web=ghcr.io/${OWNER_LC}/crm-web" >> "$GITHUB_OUTPUT"
+
           if [ -n "${{ github.event.inputs.image_tag }}" ]; then
             TAG="${{ github.event.inputs.image_tag }}"
           elif [ "${{ github.event_name }}" = "workflow_run" ]; then
@@ -70,8 +72,8 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-          IMAGE_API: ${{ env.IMAGE_API }}
-          IMAGE_WEB: ${{ env.IMAGE_WEB }}
+          IMAGE_API: ${{ steps.resolve.outputs.image_api }}
+          IMAGE_WEB: ${{ steps.resolve.outputs.image_web }}
           CANARY_WEIGHT: ${{ steps.resolve.outputs.canary_weight }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           GHCR_USER: ${{ secrets.GHCR_USER }}
