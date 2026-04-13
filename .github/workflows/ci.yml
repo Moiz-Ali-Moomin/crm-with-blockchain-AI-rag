@@ -28,8 +28,6 @@ env:
   CI: 'true'
   NEXT_TELEMETRY_DISABLED: '1'
   REGISTRY: ghcr.io
-  IMAGE_API: ghcr.io/${{ github.repository_owner }}/crm-api
-  IMAGE_WEB: ghcr.io/${{ github.repository_owner }}/crm-web
 
 defaults:
   run:
@@ -171,11 +169,21 @@ jobs:
 
     outputs:
       image_tag: ${{ steps.meta.outputs.version }}
-      api_image: ${{ env.IMAGE_API }}
-      web_image: ${{ env.IMAGE_WEB }}
+      api_image: ${{ steps.image-names.outputs.image_api }}
+      web_image: ${{ steps.image-names.outputs.image_web }}
 
     steps:
       - uses: actions/checkout@v4
+
+      # ── Compute lowercase image names ──────────────────────────────────────
+      # WHY: github.repository_owner preserves original casing; Docker requires
+      # lowercase image names. Compute once here and reference via step outputs.
+      - name: Compute image names
+        id: image-names
+        run: |
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "image_api=ghcr.io/${OWNER_LC}/crm-api" >> "$GITHUB_OUTPUT"
+          echo "image_web=ghcr.io/${OWNER_LC}/crm-web" >> "$GITHUB_OUTPUT"
 
       # ── Registry auth ──────────────────────────────────────────────────────
       - name: Log in to GitHub Container Registry
@@ -193,7 +201,7 @@ jobs:
         id: meta-api
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_API }}
+          images: ${{ steps.image-names.outputs.image_api }}
           tags: |
             type=sha,prefix=sha-,format=short
             type=ref,event=branch
@@ -202,7 +210,7 @@ jobs:
         id: meta-web
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_WEB }}
+          images: ${{ steps.image-names.outputs.image_web }}
           tags: |
             type=sha,prefix=sha-,format=short
             type=ref,event=branch
