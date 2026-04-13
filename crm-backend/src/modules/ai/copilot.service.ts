@@ -35,8 +35,11 @@ export class CopilotService {
     private readonly redis: RedisService,
     private readonly aiLogRepo: AiLogRepository,
   ) {
+    // config.get() — not getOrThrow(). AiModule only provides CopilotService
+    // when ENABLE_AI=true and OPENAI_API_KEY is confirmed present at module
+    // factory time. Using getOrThrow here is redundant and crashes CI.
     this.openai = new OpenAI({
-      apiKey: this.config.getOrThrow<string>('OPENAI_API_KEY'),
+      apiKey: this.config.get<string>('OPENAI_API_KEY') ?? '',
     });
   }
 

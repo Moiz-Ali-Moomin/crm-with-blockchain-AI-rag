@@ -17,10 +17,9 @@
 
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job, UnrecoverableError } from 'bullmq';
-import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Logger, Inject } from '@nestjs/common';
 import { QUEUE_NAMES } from '../../core/queue/queue.constants';
-import { EmbeddingService } from '../../modules/ai/embedding.service';
+import { IEmbeddingService, EMBEDDING_SERVICE } from '../../modules/ai/embedding.interface';
 import { EmbeddingJobPayload } from '../../modules/ai/ai.dto';
 
 @Processor(QUEUE_NAMES.AI_EMBEDDING)
@@ -28,8 +27,7 @@ export class AiEmbeddingWorker extends WorkerHost {
   private readonly logger = new Logger(AiEmbeddingWorker.name);
 
   constructor(
-    private readonly config: ConfigService,
-    private readonly embeddingService: EmbeddingService,
+    @Inject(EMBEDDING_SERVICE) private readonly embeddingService: IEmbeddingService,
   ) {
     super();
   }
@@ -49,13 +47,9 @@ export class AiEmbeddingWorker extends WorkerHost {
 
     // ── Upsert path ────────────────────────────────────────────────────────
 
-    // Bail early without retrying if OPENAI_API_KEY is missing
-    const apiKey = this.config.get<string>('OPENAI_API_KEY');
-    if (!apiKey) {
-      throw new UnrecoverableError(
-        'OPENAI_API_KEY is not configured. AI embedding skipped.',
-      );
-    }
+    // MockEmbeddingService.generateEmbedding() returns a zero-vector (no-op).
+    // UnrecoverableError is no longer needed here — the worker runs regardless
+    // of whether AI is enabled. The service implementation handles the no-op case.
 
     if (!content?.trim()) {
       this.logger.warn(

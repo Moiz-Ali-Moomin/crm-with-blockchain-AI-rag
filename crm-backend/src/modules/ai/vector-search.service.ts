@@ -11,9 +11,9 @@
  * IVFFlat is suitable for up to ~1M rows. Switch to HNSW for larger datasets.
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '../../core/database/prisma.service';
-import { EmbeddingService } from './embedding.service';
+import { IEmbeddingService, EMBEDDING_SERVICE } from './embedding.interface';
 import { RedisService } from '../../core/cache/redis.service';
 import { CACHE_KEYS, CACHE_TTL } from '../../core/cache/cache-keys';
 import { createHash } from 'crypto';
@@ -43,7 +43,7 @@ export class VectorSearchService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly embeddingService: EmbeddingService,
+    @Inject(EMBEDDING_SERVICE) private readonly embeddingService: IEmbeddingService,
     private readonly redis: RedisService,
   ) {}
 
