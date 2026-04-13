@@ -47,13 +47,33 @@ server {
 
     client_max_body_size 10m;
 
-    # ── Grafana (observability UI) ────────────────────────────────────────────
+    # ── Grafana (observability UI — optional service) ─────────────────────────
+    # WHY: crm_grafana may not be running in all environments. Nginx resolves
+    # upstream hostnames at startup; a missing container causes "host not found
+    # in upstream" and nginx refuses to start. We solve this by:
+    #   1. Using a variable for the upstream address — nginx defers DNS resolution
+    #      to request time, so a missing container does not block startup.
+    #   2. Returning 503 with a clear message if Grafana is unreachable.
+    # resolver 127.0.0.11 valid=10s is the Docker embedded DNS server.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $grafana_upstream http://crm_grafana:3000;
+
     location /grafana/ {
-        proxy_pass http://crm_grafana:3000/;
+        proxy_pass $grafana_upstream/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout    30s;
+        # Return a clean 503 rather than a cryptic upstream error
+        proxy_intercept_errors on;
+        error_page 502 503 504 = @grafana_unavailable;
+    }
+
+    location @grafana_unavailable {
+        add_header Content-Type text/plain always;
+        return 503 "Grafana is not available in this environment.\n";
     }
 
     # ── API ───────────────────────────────────────────────────────────────────

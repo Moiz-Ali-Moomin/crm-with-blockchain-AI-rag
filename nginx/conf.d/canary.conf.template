@@ -53,11 +53,24 @@ server {
 
     client_max_body_size 10m;
 
+    # Grafana optional — see single-slot.conf.template for rationale
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $grafana_upstream http://crm_grafana:3000;
+
     location /grafana/ {
-        proxy_pass http://crm_grafana:3000/;
+        proxy_pass $grafana_upstream/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout    30s;
+        proxy_intercept_errors on;
+        error_page 502 503 504 = @grafana_unavailable;
+    }
+
+    location @grafana_unavailable {
+        add_header Content-Type text/plain always;
+        return 503 "Grafana is not available in this environment.\n";
     }
 
     location /api/ {

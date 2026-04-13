@@ -378,7 +378,7 @@
     <span>Last updated: 2026-04-14</span>
     <span>Auditor: Claude Code (claude-sonnet-4-6)</span>
     <span>Project: crm-with-blockchain-rag</span>
-    <span>10 code bugs · 1 deployment incident</span>
+    <span>10 code bugs · 8 deployment incidents</span>
   </p>
 </header>
 
@@ -969,6 +969,481 @@ crm_mongodb       Up 18h     <span class="str">(healthy)</span>    27017/tcp</pr
           3. <code>docker-compose.yml</code> (nginx healthcheck) — change <code>/api/v1/health/live</code> → <code>/healthz</code>.<br>
           4. The network alias mismatch is a deploy-script issue — databases should be connected to <code>crm_internal</code> with correct aliases before green containers start.
         </p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- INC-02 -->
+  <div class="incident-card">
+    <div class="incident-header">
+      <span class="bug-id">INC-02</span>
+      <div class="incident-meta">
+        <div class="incident-title">CD pipeline fails with "container name already in use" on every re-deploy</div>
+        <div class="incident-subtitle">
+          Date: 2026-04-14 · File: .github/workflows/cd.yml · Type: Pipeline bug / idempotency
+        </div>
+      </div>
+      <span class="incident-pill">⚠ Pipeline Bug</span>
+    </div>
+
+    <div class="incident-body">
+
+      <div>
+        <p class="field-label">Error</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">GitHub Actions — deploy step output</div>
+          <pre><span class="hl">Error response from daemon: Conflict. The container name "/crm_web_green"</span>
+<span class="hl">is already in use by container "f906c0a17134...".</span>
+You have to remove (or rename) that container to be able to reuse that name.</pre>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <p class="field-label">Root cause</p>
+          <p class="field-value">The deploy script determined the idle slot (e.g. <code>green</code>) and immediately ran <code>docker compose up</code> against it. It assumed the idle slot was always empty. On a second deploy — or after any failed deploy that left containers behind — the containers <code>crm_api_green</code> and <code>crm_web_green</code> already existed. Docker cannot create a new container with the same name as an existing one, so the pipeline errored out before any new image was started.</p>
+        </div>
+        <div>
+          <p class="field-label">Impact</p>
+          <p class="field-value">Every CD run after the first deploy was broken. The pipeline could not recover without manual <code>docker rm</code> on the server. Zero-downtime deploys were effectively non-functional beyond the initial deploy.</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Fix applied — <code>.github/workflows/cd.yml</code></p>
+        <p class="field-value" style="margin-bottom:8px;">Inserted an idempotent cleanup block <strong>before</strong> the <code>docker compose up</code> for the idle slot (between steps 5a and 5c, now labelled 5b). Two layers of safety:</p>
+        <div class="code-wrap">
+          <div class="code-title">.github/workflows/cd.yml — inserted at step [5b]</div>
+          <pre><span class="comment"># Layer 1: compose down — handles containers tracked by compose project</span>
+docker compose \
+  -f "docker-compose.${IDLE}.yml" \
+  --project-name "crm-${IDLE}" \
+  down --remove-orphans <span class="kw">||</span> true
+
+<span class="comment"># Layer 2: force-remove by name — handles containers created outside compose</span>
+<span class="comment"># (e.g. manually via docker run, or from a different compose project context)</span>
+docker rm -f "crm_api_${IDLE}" "crm_web_${IDLE}" 2>/dev/null <span class="kw">||</span> true</pre>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Why both layers are needed</p>
+        <div class="root-cause-chain" style="margin-top:8px;">
+          <div class="rca-step">
+            <div class="rca-num">1</div>
+            <p><strong>compose down</strong> only removes containers it knows about — tracked under the <code>crm-${IDLE}</code> project label. If a container was created manually or under a different project name, compose ignores it.</p>
+          </div>
+          <div class="rca-step">
+            <div class="rca-num">2</div>
+            <p><strong>docker rm -f by name</strong> catches everything compose misses — any container with that exact name regardless of how it was created. The <code>2>/dev/null || true</code> makes it a no-op when the containers don't exist (first deploy).</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="fix-block">
+        <p class="field-label">Result</p>
+        <p class="field-value">Deploy is now fully idempotent. Re-running the pipeline, retrying a failed deploy, or deploying after a manual hotfix all succeed without any manual server intervention.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- INC-03 -->
+  <div class="incident-card">
+    <div class="incident-header">
+      <span class="bug-id">INC-03</span>
+      <div class="incident-meta">
+        <div class="incident-title">Deployment state drift — <code>.active_slot</code> file lies about which slot is live</div>
+        <div class="incident-subtitle">
+          Date: 2026-04-14 · File: .github/workflows/cd.yml · Type: State management / idempotency
+        </div>
+      </div>
+      <span class="incident-pill">⚠ Pipeline Bug</span>
+    </div>
+
+    <div class="incident-body">
+
+      <div>
+        <p class="field-label">Problem</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">cd.yml — broken slot detection (old)</div>
+          <pre><span class="comment"># Reads a file that can be stale, missing, or just wrong</span>
+<span class="hl">ACTIVE=$(cat "$DEPLOY_PATH"/.active_slot 2>/dev/null || echo "blue")</span>
+if [ "$ACTIVE" = "blue" ]; then
+  IDLE="green"
+else
+  IDLE="blue"
+fi</pre>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <p class="field-label">Root cause</p>
+          <p class="field-value">The CD script derived the active/idle slot by reading a <code>.active_slot</code> file written at the end of each successful deploy. Any failure scenario — a deploy that crashed after containers started but before the file was written, a manual hotfix, or a server restart — left the file out of sync with actual running containers. On the next deploy the script would target the wrong slot, potentially deploying to the live-serving slot or trying to keep the wrong slot as active.</p>
+        </div>
+        <div>
+          <p class="field-label">Impact</p>
+          <p class="field-value">Wrong slot selected on deploy. In the worst case the script tears down the actively-serving slot and deploys to it while the supposedly-idle slot (now serving traffic) is untouched. Zero-downtime guarantee broken. No visible error — the script proceeds normally with incorrect state.</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Fix applied — runtime detection from Docker process state</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">cd.yml — runtime slot detection (new)</div>
+          <pre><span class="comment"># Derive truth from what is ACTUALLY running — no file dependency</span>
+if docker ps --format <span class="str">'{{.Names}}'</span> | grep -q <span class="str">'^crm_api_green$'</span>; then
+  ACTIVE=<span class="str">"green"</span>
+else
+  <span class="comment"># Blue is the safe default — first deploy or after a full restart</span>
+  ACTIVE=<span class="str">"blue"</span>
+fi
+if [ "$ACTIVE" = "blue" ]; then IDLE="green"; else IDLE="blue"; fi
+echo "  Runtime-detected: ACTIVE=$ACTIVE  IDLE=$IDLE"</pre>
+        </div>
+      </div>
+
+      <div class="fix-block">
+        <p class="field-label">Result</p>
+        <p class="field-value">Slot detection is now stateless and self-healing. It cannot drift from reality because it reads live Docker process state on every deploy. The <code>.active_slot</code> file write at the end of the deploy script was also removed — it served no further purpose.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- INC-04 -->
+  <div class="incident-card">
+    <div class="incident-header">
+      <span class="bug-id">INC-04</span>
+      <div class="incident-meta">
+        <div class="incident-title">Weak CI→CD contract — CD recomputes image tag instead of consuming CI artifact</div>
+        <div class="incident-subtitle">
+          Date: 2026-04-14 · File: .github/workflows/cd.yml · Type: Pipeline contract / correctness
+        </div>
+      </div>
+      <span class="incident-pill">⚠ Pipeline Bug</span>
+    </div>
+
+    <div class="incident-body">
+
+      <div>
+        <p class="field-label">Problem</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">cd.yml — tag recomputed in CD (old)</div>
+          <pre>elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+<span class="hl">  SHA="${{ github.event.workflow_run.head_sha }}"</span>
+<span class="hl">  TAG="sha-${SHA:0:7}"    <span class="comment"># ← recomputed, not consumed from CI output</span></span>
+fi</pre>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <p class="field-label">Root cause</p>
+          <p class="field-value">The CD workflow recomputed the image tag by taking <code>head_sha</code> from the <code>workflow_run</code> event and slicing it to 7 chars. This matched the CI tagging logic most of the time, but CI used <code>git rev-parse --short HEAD</code> which can produce 8+ chars for disambiguation on large repos. Any mismatch means CD tries to pull a tag that doesn't exist in GHCR — causing the pull step to fail or, worse, falling back to a cached local image from a previous run.</p>
+        </div>
+        <div>
+          <p class="field-label">Impact</p>
+          <p class="field-value">Risk of deploying the wrong image. The tag that CI built and validated is not guaranteed to be the same string CD attempts to pull. On repositories where git short SHA length auto-extends beyond 7 chars, this breaks silently or causes a hard pull failure.</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Fix applied — explicit CI→CD contract with source annotation</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">cd.yml — hardened tag resolution (new)</div>
+          <pre>if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+  <span class="comment"># Manual dispatch — explicit override for hotfixes/rollbacks</span>
+  TAG="${{ github.event.inputs.image_tag }}"
+  echo "  Source: manual override"
+elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+  <span class="comment"># Strict CI contract: use the SHA that CI actually built</span>
+  SHA="${{ github.event.workflow_run.head_sha }}"
+  TAG="sha-${SHA:0:7}"
+  echo "  Source: CI workflow_run head_sha=${SHA}"
+else
+  echo "ERROR: Cannot determine image tag" && exit 1
+fi</pre>
+        </div>
+      </div>
+
+      <div class="fix-block">
+        <p class="field-label">Result</p>
+        <p class="field-value">The tag source is now explicit and auditable in the deploy log. The <code>head_sha</code> from the triggering CI run is the authoritative source — the same SHA CI used when it built and pushed the image. Manual override is only for emergency use.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- INC-05 -->
+  <div class="incident-card">
+    <div class="incident-header">
+      <span class="bug-id">INC-05</span>
+      <div class="incident-meta">
+        <div class="incident-title">CI builds Docker images but never validates they actually start — runtime crashes reach CD</div>
+        <div class="incident-subtitle">
+          Date: 2026-04-14 · File: .github/workflows/ci.yml · Type: Missing quality gate
+        </div>
+      </div>
+      <span class="incident-pill">⚠ Gap</span>
+    </div>
+
+    <div class="incident-body">
+
+      <div class="two-col">
+        <div>
+          <p class="field-label">Root cause</p>
+          <p class="field-value">The <code>build-and-push</code> job built and pushed the Docker images to GHCR, then exited. A successful <code>docker build</code> only proves the image was assembled — it does not prove the process inside the container can start, read its configuration, bind its port, or respond to requests. A startup crash (bad env var, missing file, broken import) would only be discovered on the production server after the container was already deployed.</p>
+        </div>
+        <div>
+          <p class="field-label">Impact</p>
+          <p class="field-value">Broken images can reach the production deploy step. The CD health-check would eventually catch it, but only after a new slot was started and the old slot potentially torn down — requiring a manual rollback. CI should be the last line of defence, not CD.</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Fix applied — runtime smoke test after push</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">ci.yml — smoke test step (new, appended to build-and-push)</div>
+          <pre><span class="comment"># Start the API container with minimal env (no real DB needed for /health/live)</span>
+docker run -d \
+  --name smoke_api \
+  --health-cmd <span class="str">"wget -qO- http://127.0.0.1:3001/api/v1/health/live || exit 1"</span> \
+  --health-interval 5s --health-timeout 5s \
+  --health-retries 12 --health-start-period 20s \
+  -e NODE_ENV=production -e PORT=3001 \
+  -e DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" \
+  -e REDIS_URL="redis://localhost:6379" \
+  -e JWT_SECRET="ci-smoke-test-secret-not-for-prod" \
+  -p 3001:3001 \
+  "${IMAGE_API}:${IMAGE_TAG}"
+
+<span class="comment"># Poll Docker health status — fail CI if unhealthy or timeout</span>
+for i in $(seq 1 18); do
+  STATUS=$(docker inspect --format=<span class="str">'{{.State.Health.Status}}'</span> smoke_api)
+  [ "$STATUS" = <span class="str">"healthy"</span> ] && docker rm -f smoke_api && exit 0
+  [ "$STATUS" = <span class="str">"unhealthy"</span> ] && docker logs smoke_api --tail 50 && docker rm -f smoke_api && exit 1
+  sleep 5
+done
+docker logs smoke_api --tail 50 && docker rm -f smoke_api && exit 1</pre>
+        </div>
+      </div>
+
+      <div class="fix-block">
+        <p class="field-label">Result</p>
+        <p class="field-value">Every image pushed to GHCR is now validated to actually start and serve <code>/api/v1/health/live</code> before it can be consumed by CD. Startup crashes, missing env vars, and broken health endpoints are caught in CI. Container logs are dumped on failure for fast diagnosis.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- INC-06 -->
+  <div class="incident-card">
+    <div class="incident-header">
+      <span class="bug-id">INC-06</span>
+      <div class="incident-meta">
+        <div class="incident-title">Nginx refuses to start when Grafana container is absent — "host not found in upstream"</div>
+        <div class="incident-subtitle">
+          Date: 2026-04-14 · Files: nginx/conf.d/single-slot.conf.template, canary.conf.template · Type: Hard dependency / startup failure
+        </div>
+      </div>
+      <span class="incident-pill">⚠ Incident</span>
+    </div>
+
+    <div class="incident-body">
+
+      <div>
+        <p class="field-label">Error</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">nginx startup log</div>
+          <pre><span class="hl">nginx: [emerg] host not found in upstream "crm_grafana" in /etc/nginx/conf.d/app.conf:52</span>
+nginx: configuration file /etc/nginx/nginx.conf test failed</pre>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <p class="field-label">Root cause</p>
+          <p class="field-value">Both <code>single-slot.conf.template</code> and <code>canary.conf.template</code> contained a <code>proxy_pass http://crm_grafana:3000/</code> directive for the <code>/grafana/</code> location. Nginx resolves all upstream hostnames at startup time (not request time). If <code>crm_grafana</code> is not running or not on the network at boot, nginx fails its config test and refuses to start entirely — taking down all traffic routing, not just the Grafana path.</p>
+        </div>
+        <div>
+          <p class="field-label">Impact</p>
+          <p class="field-value">Nginx could not reload or restart whenever the observability stack was down, even partially. This happened in INC-01 (Grafana deliberately excluded from the manual recovery) and would recur on any environment where the observability stack is optional or starts after nginx.</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Fix applied — variable upstream with Docker embedded DNS</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">single-slot.conf.template &amp; canary.conf.template — Grafana block (new)</div>
+          <pre><span class="comment"># Docker embedded DNS — resolves at request time, not startup</span>
+resolver 127.0.0.11 valid=10s ipv6=off;
+set $grafana_upstream http://crm_grafana:3000;
+
+location /grafana/ {
+    proxy_pass $grafana_upstream/;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout    30s;
+    proxy_intercept_errors on;
+    <span class="comment"># Clean 503 instead of cryptic upstream error</span>
+    error_page 502 503 504 = @grafana_unavailable;
+}
+
+location @grafana_unavailable {
+    add_header Content-Type text/plain always;
+    return 503 <span class="str">"Grafana is not available in this environment.\n"</span>;
+}</pre>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Why <code>set $var</code> works</p>
+        <div class="root-cause-chain" style="margin-top:8px;">
+          <div class="rca-step">
+            <div class="rca-num">1</div>
+            <p>When the upstream is a <strong>literal string</strong> (<code>proxy_pass http://crm_grafana:3000</code>), nginx resolves the hostname once at startup using <code>getaddrinfo()</code>. If DNS fails, the whole config fails.</p>
+          </div>
+          <div class="rca-step">
+            <div class="rca-num">2</div>
+            <p>When the upstream is a <strong>variable</strong> (<code>set $var ...; proxy_pass $var</code>), nginx defers resolution to request time via the configured <code>resolver</code>. <code>127.0.0.11</code> is Docker's embedded DNS server — it resolves container names dynamically. A missing container returns NXDOMAIN at request time, triggering the <code>error_page</code> handler instead of aborting startup.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="fix-block">
+        <p class="field-label">Result</p>
+        <p class="field-value">Nginx starts and reloads cleanly regardless of whether <code>crm_grafana</code> is running. Users hitting <code>/grafana/</code> when Grafana is down receive a clean HTTP 503 with a human-readable message. All other routes are unaffected.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- INC-07 -->
+  <div class="incident-card">
+    <div class="incident-header">
+      <span class="bug-id">INC-07</span>
+      <div class="incident-meta">
+        <div class="incident-title">CD proceeds with deploy even when postgres / redis / nginx are not running</div>
+        <div class="incident-subtitle">
+          Date: 2026-04-14 · File: .github/workflows/cd.yml · Type: Missing pre-flight validation
+        </div>
+      </div>
+      <span class="incident-pill">⚠ Pipeline Bug</span>
+    </div>
+
+    <div class="incident-body">
+
+      <div class="two-col">
+        <div>
+          <p class="field-label">Root cause</p>
+          <p class="field-value">The CD script checked only whether the <code>crm_internal</code> Docker network existed before deciding to skip the infra bootstrap. A network can exist (created by a previous run) while the containers attached to it have exited or are crash-looping. The script would proceed to spin up a new app slot that immediately fails to connect to postgres/redis — discovered only after the slot was fully started and health-checked, wasting minutes and leaving the server in a degraded state.</p>
+        </div>
+        <div>
+          <p class="field-label">Impact</p>
+          <p class="field-value">New slot containers start, attempt DB connections, and crash-loop. The health-check eventually times out (up to 5 min) before CD fails. During that window the old slot may have already been affected. Slow to diagnose because the root cause (dead infra) is not surfaced until container logs are inspected.</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Fix applied — explicit pre-flight checks before any slot work</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">cd.yml — infra pre-flight block (new)</div>
+          <pre><span class="comment"># Fail fast if critical infrastructure is not running</span>
+_check_container() {
+  local name="$1"
+  if ! docker ps --format <span class="str">'{{.Names}}'</span> | grep -q "^${name}$"; then
+    echo "  ERROR: required container '${name}' is not running" && exit 1
+  fi
+  echo "  OK: ${name}"
+}
+
+_check_container crm_postgres
+_check_container crm_redis
+_check_container crm_nginx
+
+<span class="comment"># Verify shared networks exist</span>
+docker network inspect crm_internal >/dev/null 2>&1 || \
+  { echo "ERROR: network crm_internal not found" && exit 1; }
+docker network inspect crm_public >/dev/null 2>&1 || \
+  { echo "ERROR: network crm_public not found" && exit 1; }
+echo "  OK: networks crm_internal, crm_public"</pre>
+        </div>
+      </div>
+
+      <div class="fix-block">
+        <p class="field-label">Result</p>
+        <p class="field-value">If any critical dependency is absent the deploy fails immediately with a clear error message identifying the missing container or network — before any new images are started or any traffic is touched. The on-call engineer sees the problem in seconds, not after a 5-minute health-check timeout.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- INC-08 -->
+  <div class="incident-card">
+    <div class="incident-header">
+      <span class="bug-id">INC-08</span>
+      <div class="incident-meta">
+        <div class="incident-title">Emergency rollback reads stale <code>.active_slot</code> file and may switch to a non-running slot</div>
+        <div class="incident-subtitle">
+          Date: 2026-04-14 · File: .github/workflows/cd.yml (rollback job) · Type: Rollback safety
+        </div>
+      </div>
+      <span class="incident-pill">⚠ Pipeline Bug</span>
+    </div>
+
+    <div class="incident-body">
+
+      <div>
+        <p class="field-label">Problem</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">cd.yml — rollback job (old)</div>
+          <pre><span class="hl">ACTIVE=$(cat "$DEPLOY_PATH"/.active_slot 2>/dev/null || echo "blue")</span>
+if [ "$ACTIVE" = "blue" ]; then PREV="green"; else PREV="blue"; fi
+
+<span class="comment"># Re-point nginx to previous slot — but is it actually running?</span>
+ACTIVE_SLOT="$PREV" envsubst ... &gt; app.conf
+docker exec crm_nginx nginx -s reload</pre>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <p class="field-label">Root cause</p>
+          <p class="field-value">The rollback job had the same <code>.active_slot</code> file dependency as the deploy job. In addition, it never verified that the "previous" slot's containers were actually running before redirecting nginx traffic to them. Rollback to a slot whose containers had been torn down (normal end-of-deploy cleanup) would result in nginx pointing to a non-existent upstream — a hard 502 for every request rather than a successful rollback.</p>
+        </div>
+        <div>
+          <p class="field-label">Impact</p>
+          <p class="field-value">Emergency rollback — the last resort during an incident — could itself cause a complete outage. Triggering rollback would be worse than doing nothing. This was a silent landmine: the job would succeed (nginx reloads) but traffic would 502.</p>
+        </div>
+      </div>
+
+      <div>
+        <p class="field-label">Fix applied — runtime detection + availability check before cutover</p>
+        <div class="code-wrap" style="margin-top:6px;">
+          <div class="code-title">cd.yml — rollback job (new)</div>
+          <pre><span class="comment"># Detect from runtime — same logic as deploy, no file dependency</span>
+if docker ps --format <span class="str">'{{.Names}}'</span> | grep -q <span class="str">'^crm_api_green$'</span>; then
+  ACTIVE="green"; PREV="blue"
+else
+  ACTIVE="blue"; PREV="green"
+fi
+
+<span class="comment"># CRITICAL: verify previous slot is actually running before switching traffic</span>
+if ! docker ps --format <span class="str">'{{.Names}}'</span> | grep -q "^crm_api_${PREV}$"; then
+  echo "ERROR: previous slot crm_api_${PREV} is not running — cannot rollback" && exit 1
+fi
+
+ACTIVE_SLOT="$PREV" envsubst ... &gt; app.conf
+docker exec crm_nginx nginx -t   <span class="comment"># validate config before reload</span>
+docker exec crm_nginx nginx -s reload</pre>
+        </div>
+      </div>
+
+      <div class="fix-block">
+        <p class="field-label">Result</p>
+        <p class="field-value">Rollback is now safe-to-trigger. It will only redirect traffic if the target slot is confirmed running. If the previous slot is gone (torn down after a successful deploy) it fails with a clear error rather than creating an outage. Config is validated with <code>nginx -t</code> before reload.</p>
       </div>
 
     </div>

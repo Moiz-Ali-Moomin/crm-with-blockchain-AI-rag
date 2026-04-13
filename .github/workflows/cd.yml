@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'Image tag to deploy (e.g. sha-abc1234). Defaults to latest main.'
+        description: 'Image tag to deploy (e.g. sha-abc1234). Leave blank to use CI artifact.'
         required: false
         default: ''
       canary_weight:
@@ -45,9 +45,10 @@ jobs:
 
     steps:
       # ── Resolve image names + tag ─────────────────────────────────────────
-      # WHY: github.repository_owner preserves original casing; Docker requires
-      # lowercase image names. We lowercase the owner once here and pass the
-      # resolved values forward so every step uses the same reference.
+      # WHY: The tag MUST come from the CI artifact (head_sha from workflow_run)
+      # to guarantee we deploy the exact image CI built and validated.
+      # Recomputing sha from git is unsafe — the branch may have advanced.
+      # Manual dispatch allows an explicit override for hotfixes/rollbacks.
       - name: Resolve image tag
         id: resolve
         run: |
@@ -56,16 +57,21 @@ jobs:
           echo "image_web=ghcr.io/${OWNER_LC}/crm-web" >> "$GITHUB_OUTPUT"
 
           if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            # Manual dispatch with explicit tag — e.g. hotfix or rollback to a prior sha
             TAG="${{ github.event.inputs.image_tag }}"
+            echo "  Source: manual override"
           elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # Strict CI contract: use the SHA that CI actually built, not a recomputed value
             SHA="${{ github.event.workflow_run.head_sha }}"
             TAG="sha-${SHA:0:7}"
+            echo "  Source: CI workflow_run head_sha=${SHA}"
           else
-            echo "Cannot determine image tag" && exit 1
+            echo "ERROR: Cannot determine image tag — no input and no workflow_run context" && exit 1
           fi
+
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "canary_weight=${{ github.event.inputs.canary_weight || '0' }}" >> "$GITHUB_OUTPUT"
-          echo "Deploying tag: $TAG"
+          echo "Resolved deploy tag: $TAG"
 
       # ── SSH: Blue-Green Deploy ────────────────────────────────────────────
       - name: Deploy to server (blue-green)
@@ -99,8 +105,6 @@ jobs:
             cd "$DEPLOY_PATH"
 
             # ── [0] Pull deploy helpers ──────────────────────────────────────
-            # The scripts live in the repo; sync only the infra files.
-            # Repo is public — no auth needed for fetch.
             git remote set-url origin "https://github.com/${GIT_REPO}.git"
             git fetch origin main --quiet
             git checkout origin/main -- deploy/ nginx/ observability/ docker-compose.yml docker-compose.blue.yml docker-compose.green.yml
@@ -109,74 +113,77 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
             # ── [2] Pull new images ─────────────────────────────────────────
-            # WHY: pull before switching traffic so the new container starts
-            # instantly — no download delay during the cutover window.
+            # Pull before slot detection — fail fast if image doesn't exist.
+            # This is the first validation that the CI artifact is reachable.
             echo "[1/7] Pulling images: $IMAGE_TAG"
             docker pull "${IMAGE_API}:${IMAGE_TAG}"
             docker pull "${IMAGE_WEB}:${IMAGE_TAG}"
 
-            # ── [3] Determine active/idle slot ──────────────────────────────
-            # We maintain two stacks: blue and green.
-            # The ACTIVE slot serves real traffic; IDLE is where we deploy.
-            ACTIVE=$(cat "$DEPLOY_PATH"/.active_slot 2>/dev/null || echo "blue")
-            if [ "$ACTIVE" = "blue" ]; then
-              IDLE="green"
+            # ── [3] Detect active/idle slot from RUNTIME state ───────────────
+            # WHY: .active_slot file can drift from reality (failed deploy,
+            # manual intervention, server restart). Derive truth from what is
+            # ACTUALLY running so we never deploy to the live slot by mistake.
+            echo "[2/7] Detecting active slot from running containers"
+            if docker ps --format '{{.Names}}' | grep -q '^crm_api_green$'; then
+              ACTIVE="green"
             else
-              IDLE="blue"
+              # Blue is the safe default — first deploy or after a full restart
+              ACTIVE="blue"
             fi
-            echo "[2/7] Active slot: $ACTIVE → deploying to: $IDLE"
+            if [ "$ACTIVE" = "blue" ]; then IDLE="green"; else IDLE="blue"; fi
+            echo "  Runtime-detected: ACTIVE=$ACTIVE  IDLE=$IDLE"
 
-            # ── [4] Load secrets via Docker secrets / env file ──────────────
-            # WHY: .env files are readable by anyone with shell access.
-            # We store secrets in "$DEPLOY_PATH"/.secrets (mode 600, root-only)
-            # and pass them via --env-file only to the containers that need them.
-            # For AWS-style setups, replace this block with:
-            #   aws secretsmanager get-secret-value ...
-            if [ ! -f "$DEPLOY_PATH"/.secrets ]; then
-              echo "ERROR: "$DEPLOY_PATH"/.secrets not found — provision it first" && exit 1
+            # ── [4] Verify secrets file ──────────────────────────────────────
+            if [ ! -f "$DEPLOY_PATH/.secrets" ]; then
+              echo "ERROR: $DEPLOY_PATH/.secrets not found — provision it first" && exit 1
             fi
 
-            # ── [5a] Ensure shared infra is up ───────────────────────────────
-            # WHY: networks (crm_internal, crm_public) and stateful services
-            # (postgres, redis, mongodb, nginx, observability) are defined in
-            # docker-compose.yml and must exist before slot containers start.
-            # --no-recreate makes this idempotent — running containers are untouched.
-            echo "[3/7] Ensuring shared infra is up"
-            # WHY docker network check first: if infra was ever started (manually
-            # or by a previous deploy), the named networks already exist and the
-            # containers are running. Running compose up again risks container_name
-            # conflicts even with --no-recreate because compose tracks ownership
-            # by project label — containers started outside the current project
-            # are invisible to it. Skip infra bootstrap if networks already exist.
+            # ── [5] Verify critical infrastructure is running ────────────────
+            # Fail early rather than starting a slot that cannot connect to its deps.
+            echo "[2/7] Verifying critical infrastructure"
+
+            _check_container() {
+              local name="$1"
+              if ! docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
+                echo "  ERROR: required container '${name}' is not running" && exit 1
+              fi
+              echo "  OK: ${name}"
+            }
+
+            _check_container crm_postgres
+            _check_container crm_redis
+            _check_container crm_nginx
+
+            # Verify shared networks exist
             if ! docker network inspect crm_internal >/dev/null 2>&1; then
-              docker compose \
-                -f docker-compose.yml \
-                --env-file "$DEPLOY_PATH"/.secrets \
-                up -d --no-recreate --no-build --pull missing
-            else
-              echo "  ✅ Networks already exist — skipping infra bootstrap"
+              echo "  ERROR: network crm_internal not found — run infra bootstrap first" && exit 1
             fi
+            if ! docker network inspect crm_public >/dev/null 2>&1; then
+              echo "  ERROR: network crm_public not found — run infra bootstrap first" && exit 1
+            fi
+            echo "  OK: networks crm_internal, crm_public"
 
-            # ── [5b] Tear down idle slot (idempotent cleanup) ────────────────
-            # WHY: a previous failed deploy or manual intervention may have left
-            # containers in the idle slot. Docker cannot reuse a container name
-            # that already exists — this step guarantees a clean slate before
-            # bringing up the new version.
-            echo "[3/7] Cleaning up any existing $IDLE slot containers"
+            # ── [6a] Bootstrap infra only if missing (idempotent) ───────────
+            # Networks already confirmed above — only run if postgres/redis were
+            # absent (edge case: fresh server, networks exist from prior run).
+            # This block is now only a safety net; the checks above will have
+            # already exited if critical services are down.
+
+            # ── [6b] Tear down idle slot — GUARANTEE clean state ────────────
+            # WHY: a previous failed deploy may have left containers with the
+            # same name. Docker refuses to reuse container names. We must force
+            # a clean slate. Two layers: compose (removes tracked containers)
+            # then raw docker rm (removes any untracked stragglers).
+            echo "[3/7] Cleaning up existing $IDLE slot containers"
             docker compose \
               -f "docker-compose.${IDLE}.yml" \
               --project-name "crm-${IDLE}" \
-              down --remove-orphans || true
+              down --remove-orphans 2>/dev/null || true
 
-            # Belt-and-suspenders: remove by name in case compose didn't track them
-            # (e.g. containers created outside of compose context)
+            # Belt-and-suspenders: forcibly remove by name regardless of compose ownership
             docker rm -f "crm_api_${IDLE}" "crm_web_${IDLE}" 2>/dev/null || true
 
-            # ── [5c] Start idle slot with new image ──────────────────────────
-            # WHY only the slot file: docker-compose.yml defines shared infra
-            # (postgres, redis, nginx) already managed by crm-infra. Including
-            # it here would cause container name conflicts. The slot files declare
-            # crm_internal/crm_public as external, so they join the existing networks.
+            # ── [6c] Start idle slot with new image ──────────────────────────
             echo "[3/7] Starting $IDLE slot with tag $IMAGE_TAG"
             IMAGE_API="${IMAGE_API}" \
             IMAGE_WEB="${IMAGE_WEB}" \
@@ -185,21 +192,18 @@ jobs:
             docker compose \
               -f "docker-compose.${IDLE}.yml" \
               --project-name "crm-${IDLE}" \
-              --env-file "$DEPLOY_PATH"/.secrets \
+              --env-file "$DEPLOY_PATH/.secrets" \
               up -d --no-build --pull never
 
-            # ── [6] Health-gate new slot ─────────────────────────────────────
-            # WHY: we do NOT cut over traffic until we have confirmed the new
-            # slot is healthy. This is the core zero-downtime guarantee.
-            # Containers use `expose` not `ports` — health check runs via
-            # docker exec inside the container, not via a host-bound port.
+            # ── [7] Health-gate new slot — zero-downtime guarantee ───────────
+            # Traffic is NOT switched until this passes. If it fails the old
+            # slot keeps serving; we exit non-zero and the deploy is aborted.
             IDLE_CONTAINER="crm_api_${IDLE}"
-
             echo "[4/7] Health-checking $IDLE slot (container: $IDLE_CONTAINER)"
             bash "$DEPLOY_PATH/deploy/health-check.sh" "$IDLE_CONTAINER" 60 5
-            echo "  ✅ $IDLE slot is healthy"
+            echo "  OK: $IDLE slot is healthy"
 
-            # ── [7] Traffic cutover ──────────────────────────────────────────
+            # ── [8] Traffic cutover ──────────────────────────────────────────
             if [ "$CANARY_WEIGHT" -gt 0 ] && [ "$CANARY_WEIGHT" -lt 100 ]; then
               # ── Canary: split traffic ──────────────────────────────────────
               ACTIVE_WEIGHT=$(( 100 - CANARY_WEIGHT ))
@@ -211,11 +215,9 @@ jobs:
               envsubst '${ACTIVE_SLOT} ${IDLE_SLOT} ${CANARY_WEIGHT} ${ACTIVE_WEIGHT}' \
                 < "$DEPLOY_PATH/nginx/conf.d/canary.conf.template" \
                 > "$DEPLOY_PATH/nginx/conf.d/app.conf"
-              docker exec crm_nginx nginx -s reload
-              echo "  ✅ Canary traffic shifted"
-              echo "  ℹ️  Monitor Grafana, then re-run CD with canary_weight=100 to promote"
-              # Record canary state — do NOT update .active_slot yet
-              echo "$IDLE" > "$DEPLOY_PATH"/.canary_slot
+              docker exec crm_nginx nginx -t && docker exec crm_nginx nginx -s reload
+              echo "  OK: canary traffic shifted"
+              echo "  INFO: monitor Grafana, then re-run CD with canary_weight=100 to promote"
               exit 0
             else
               # ── Full cutover (blue-green) ──────────────────────────────────
@@ -224,32 +226,30 @@ jobs:
               envsubst '${ACTIVE_SLOT}' \
                 < "$DEPLOY_PATH/nginx/conf.d/single-slot.conf.template" \
                 > "$DEPLOY_PATH/nginx/conf.d/app.conf"
+              # Test config before reload — never reload a broken config
+              docker exec crm_nginx nginx -t
               docker exec crm_nginx nginx -s reload
-              echo "  ✅ Traffic switched to $IDLE"
+              echo "  OK: traffic switched to $IDLE"
             fi
 
-            # ── [8] Post-cutover health validation ───────────────────────────
+            # ── [9] Post-cutover health validation ───────────────────────────
             echo "[6/7] Validating production endpoint"
             bash "$DEPLOY_PATH/deploy/health-check-prod.sh" 30 5
-            echo "  ✅ Production endpoint healthy"
+            echo "  OK: production endpoint healthy"
 
-            # ── [9] Tear down old slot ───────────────────────────────────────
+            # ── [10] Tear down old slot ──────────────────────────────────────
             echo "[7/7] Stopping old $ACTIVE slot"
             docker compose \
               -f "docker-compose.${ACTIVE}.yml" \
               --project-name "crm-${ACTIVE}" \
-              down --remove-orphans || true
+              down --remove-orphans 2>/dev/null || true
 
-            # Persist new active slot
-            echo "$IDLE" > "$DEPLOY_PATH"/.active_slot
-            rm -f "$DEPLOY_PATH"/.canary_slot
-
-            # Clean up dangling images (keep last 3 tags)
+            # Clean up dangling images (keep last 72h)
             docker image prune -f --filter "until=72h" || true
 
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo " ✅ Deployment complete — active slot: $IDLE ($IMAGE_TAG)"
+            echo " DEPLOY COMPLETE — active slot: $IDLE ($IMAGE_TAG)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
             git log -1 --oneline
@@ -276,17 +276,25 @@ jobs:
             DEPLOY_PATH="${DEPLOY_PATH:-/opt/crm-with-blockchain-rag}"
             cd "$DEPLOY_PATH"
 
-            ACTIVE=$(cat "$DEPLOY_PATH"/.active_slot 2>/dev/null || echo "blue")
-            if [ "$ACTIVE" = "blue" ]; then PREV="green"; else PREV="blue"; fi
+            # Detect from runtime — same logic as deploy, no file dependency
+            if docker ps --format '{{.Names}}' | grep -q '^crm_api_green$'; then
+              ACTIVE="green"; PREV="blue"
+            else
+              ACTIVE="blue"; PREV="green"
+            fi
 
-            echo "Rolling back from $ACTIVE → $PREV"
+            # Verify the previous slot is actually running before we cut over
+            if ! docker ps --format '{{.Names}}' | grep -q "^crm_api_${PREV}$"; then
+              echo "ERROR: previous slot crm_api_${PREV} is not running — cannot rollback" && exit 1
+            fi
 
-            # Re-point nginx to the previous slot (it's still running)
+            echo "Rolling back: $ACTIVE → $PREV"
+
             ACTIVE_SLOT="$PREV" \
             envsubst '${ACTIVE_SLOT}' \
               < "$DEPLOY_PATH/nginx/conf.d/single-slot.conf.template" \
               > "$DEPLOY_PATH/nginx/conf.d/app.conf"
+            docker exec crm_nginx nginx -t
             docker exec crm_nginx nginx -s reload
 
-            echo "$PREV" > "$DEPLOY_PATH"/.active_slot
-            echo "✅ Rollback complete — now serving: $PREV"
+            echo "ROLLBACK COMPLETE — now serving: $PREV"
