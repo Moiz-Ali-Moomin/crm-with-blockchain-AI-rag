@@ -115,7 +115,7 @@ export class RagService {
 
     if (chunks.length === 0) {
       const response: RagResponse = {
-        answer: 'No relevant CRM records found.',
+        answer: 'I could not find any relevant CRM records for your query.',
         sources: [],
         confidence: 0,
         fromCache: false,
@@ -142,9 +142,10 @@ export class RagService {
     const completion = await this.openai.chat.completions.create({
       model: this.model,
       temperature: 0.2,
+      max_tokens: 800,
       messages: [
         { role: 'system', content: RAG_SYSTEM_PROMPT },
-        { role: 'user', content: `Context:\n${contextWindow}\n\nQuestion: ${query}` },
+        { role: 'user', content: `CRM Context:\n${contextWindow}\n\nQuestion: ${query}` },
       ],
     });
 
@@ -153,13 +154,16 @@ export class RagService {
     const answer = completion.choices[0].message.content ?? '';
     const tokensUsed = completion.usage?.total_tokens;
 
-    const confidence =
-      chunks.reduce((sum, c) => sum + c.similarity, 0) / chunks.length;
+    const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+    const confidence = round3(
+      chunks.reduce((sum, c) => sum + c.similarity, 0) / chunks.length,
+    );
 
     const sources: RagSource[] = chunks.map((c) => ({
       entityType: c.entityType,
       entityId: c.entityId,
-      similarity: c.similarity,
+      similarity: round3(c.similarity),
       excerpt: c.content.slice(0, 200),
     }));
 
@@ -181,10 +185,8 @@ export class RagService {
       response: answer,
       latencyMs,
       metadata: {
-        entityTypes,
-        topK,
-        threshold,
-        confidence,
+        model: this.model,
+        temperature: 0.2,
       },
     });
 
