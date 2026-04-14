@@ -170,6 +170,20 @@ services:
     depends_on:
       - loki
 
+  # ── Nginx Prometheus exporter ─────────────────────────────────────────────
+  # Scrapes nginx stub_status (port 8080 inside crm_nginx) and exposes
+  # Prometheus-format metrics on port 9113 for prometheus.yml to collect.
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.1.0
+    container_name: crm_nginx_exporter
+    restart: unless-stopped
+    command:
+      - '--nginx.scrape-uri=http://crm_nginx:8080/stub_status'
+    networks:
+      - crm_internal
+    depends_on:
+      - nginx
+
   # ── Node exporter (host metrics) ──────────────────────────────────────────
   node-exporter:
     image: prom/node-exporter:v1.8.0
@@ -243,5 +257,9 @@ networks:
   crm_internal:
     name: crm_internal
     internal: true
+    # internal: true isolates this network from the internet.
+    # Slot containers (blue/green) declare it as external: true and join it.
+    # The infra project owns it — slot projects never create or destroy it.
   crm_public:
     name: crm_public
+    # internet-facing — nginx and web containers attach here for external traffic.

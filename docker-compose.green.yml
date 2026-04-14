@@ -36,6 +36,7 @@ services:
           memory: 256m
     security_opt:
       - no-new-privileges:true
+    read_only: false   # NestJS writes logs; set true if logs go to stdout only
     tmpfs:
       - /tmp
 
@@ -53,7 +54,7 @@ services:
     expose:
       - "3000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

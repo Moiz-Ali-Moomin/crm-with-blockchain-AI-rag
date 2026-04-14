@@ -863,16 +863,40 @@ Docker Compose version v2.x.x</code></pre>
       </div>
 
       <h3>Step 7 — Trigger the CD pipeline</h3>
-      <p>Push to <code>main</code> or manually trigger the CD workflow in GitHub Actions. The deploy script renders <code>single-slot.conf.template</code> → <code>app.conf</code> with the real cert paths and reloads Nginx. After that, HTTPS is live.</p>
+      <p>Push the fixed <code>app.conf</code> from your local machine to trigger the deploy:</p>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash — local machine</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code><span class="cmd">git</span> add nginx/conf.d/app.conf
+<span class="cmd">git</span> commit -m "fix: bootstrap app.conf — HTTP only, no SSL cert dependency on startup"
+<span class="cmd">git</span> push origin main</code></pre>
+      </div>
+      <p>The push triggers the CD pipeline automatically. It renders <code>single-slot.conf.template</code> → <code>app.conf</code> with the real cert paths, runs <code>nginx -t</code> (passes now that certs exist), and reloads Nginx. HTTPS goes live.</p>
+
+      <div class="callout info">
+        <span class="callout-icon">ℹ</span>
+        <p>Certbot sets up a systemd timer automatically. Add this cron as a belt-and-suspenders backup that also reloads Nginx after renewal — run it on the server while the pipeline deploys:</p>
+      </div>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label"><span class="dot"></span>bash — server</span>
+          <button class="copy-btn" onclick="copy(this)">Copy</button>
+        </div>
+        <pre><code>(crontab -l 2>/dev/null; echo "30 2 1,15 * * certbot renew --quiet &amp;&amp; docker exec crm_nginx nginx -s reload") | crontab -
+<span class="cmd">crontab</span> -l</code></pre>
+      </div>
 
       <h3>Verify SSL is working</h3>
+      <p>After the CD pipeline finishes:</p>
       <div class="code-block">
         <div class="code-header">
           <span class="code-label"><span class="dot"></span>bash</span>
           <button class="copy-btn" onclick="copy(this)">Copy</button>
         </div>
         <pre><code><span class="cmd">curl</span> -I https://bestpurchasestore.com
-<span class="c"># Look for: HTTP/2 200 and server: nginx</span></code></pre>
+<span class="c"># Expected: HTTP/2 200 and server: nginx</span></code></pre>
       </div>
     </section>
 

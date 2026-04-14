@@ -23,7 +23,9 @@
 import { cookies } from 'next/headers';
 import { cache } from 'react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+// Must match the defensive logic in client.ts — keep both in sync.
+const _rawBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
+const API_BASE = _rawBase.endsWith('/api/v1') ? _rawBase : `${_rawBase}/api/v1`;
 
 export type ServerFetchOptions = {
   revalidate?: number | false;

@@ -107,8 +107,13 @@ POSTGRES_DB=crm_prod
 REDIS_PASSWORD=CHANGE_ME
 MONGO_USER=crm
 MONGO_PASSWORD=CHANGE_ME
-NEXT_PUBLIC_API_URL=https://bestpurchasestore.com
+NEXT_PUBLIC_API_URL=https://bestpurchasestore.com/api/v1
 NEXT_PUBLIC_APP_URL=https://bestpurchasestore.com
+# NOTE: NEXT_PUBLIC_* above are informational only — they are baked into the
+# Next.js bundle at CI build time from GitHub Secrets, not from this file.
+# Keep them in sync with your GitHub repo secrets.
+CORS_ORIGINS=https://bestpurchasestore.com
+API_VERSION=v1
 GRAFANA_PASSWORD=CHANGE_ME
 JWT_SECRET=CHANGE_ME
 SECRETS

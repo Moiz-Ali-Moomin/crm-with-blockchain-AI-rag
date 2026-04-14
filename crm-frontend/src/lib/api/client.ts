@@ -1,6 +1,9 @@
 import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+// NEXT_PUBLIC_API_URL must include /api/v1 (e.g. https://bestpurchasestore.com/api/v1).
+// The fallback appends it so local dev without an .env.local still works.
+const _rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+const API_URL = _rawApiUrl.endsWith('/api/v1') ? _rawApiUrl : `${_rawApiUrl}/api/v1`;
 
 export const apiClient = axios.create({
   baseURL: API_URL,

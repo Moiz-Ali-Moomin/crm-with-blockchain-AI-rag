@@ -108,7 +108,7 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run build
         env:
-          NEXT_PUBLIC_API_URL: http://localhost:3001
+          NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
 
   # ────────────────────────────────────────────────────────────────────────────
   # Docker build validation (all branches / PRs)

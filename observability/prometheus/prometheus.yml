@@ -58,17 +58,21 @@ scrape_configs:
       - target_label: slot
         replacement: green
 
-  # ── Nginx (stub_status) ────────────────────────────────────────────────
+  # ── Nginx (via nginx-prometheus-exporter sidecar) ─────────────────────
   - job_name: nginx
     static_configs:
-      - targets: ['crm_nginx:9113']   # nginx-prometheus-exporter sidecar
+      - targets: ['crm_nginx_exporter:9113']
 
   # ── Postgres ───────────────────────────────────────────────────────────
-  - job_name: postgres
-    static_configs:
-      - targets: ['crm_postgres_exporter:9187']
+  # Requires postgres_exporter to be added to docker-compose.yml.
+  # Commented out until deployed to avoid Prometheus error-log spam.
+  # - job_name: postgres
+  #   static_configs:
+  #     - targets: ['crm_postgres_exporter:9187']
 
   # ── Redis ──────────────────────────────────────────────────────────────
-  - job_name: redis
-    static_configs:
-      - targets: ['crm_redis_exporter:9121']
+  # Requires redis_exporter to be added to docker-compose.yml.
+  # Commented out until deployed to avoid Prometheus error-log spam.
+  # - job_name: redis
+  #   static_configs:
+  #     - targets: ['crm_redis_exporter:9121']
