@@ -52,8 +52,11 @@ const logger = new Logger('MongoModule');
           );
 
           return {
-            uri: undefined,        // ✅ prevents parsing
-            autoConnect: false,    // ✅ prevents connection attempt
+            uri: 'mongodb://127.0.0.1:27017/disabled', // ✅ must be a valid string
+            serverSelectionTimeoutMS: 1000,             // ✅ fail fast (no long retries)
+            connectTimeoutMS: 1000,
+            socketTimeoutMS: 1000,
+            retryWrites: false,
           };
         }
 
@@ -76,8 +79,6 @@ const logger = new Logger('MongoModule');
 
           // App metadata
           appName: 'crm-saas',
-
-          // ✅ Important: no deprecated / invalid options
         };
       },
     }),
