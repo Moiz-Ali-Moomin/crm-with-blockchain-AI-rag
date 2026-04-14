@@ -17,6 +17,7 @@ import { ZodValidationPipe } from './common/pipes/zod-validation.pipe';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
+    rawBody: true,   // required for Stripe webhook signature verification
   });
 
   // ── Logger ────────────────────────────────────────────────────────────────
