@@ -1,4 +1,4 @@
-import { apiClient, apiPost } from './client';
+import { apiClient, apiGet, apiPost } from './client';
 
 export const authApi = {
   login: (email: string, password: string) =>
