@@ -19,7 +19,7 @@
  *   - Temperature is 0.2 (near-deterministic) for factual retrieval tasks
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { createHash } from 'crypto';
@@ -27,17 +27,13 @@ import { VectorSearchService, SemanticSearchResult } from './vector-search.servi
 import { AiLogRepository } from './repositories/ai-log.repository';
 import { RedisService } from '../../core/cache/redis.service';
 import { CACHE_KEYS, CACHE_TTL } from '../../core/cache/cache-keys';
-
-// ── Type Definitions ────────────────────────────────────────────────────────
+import { AiOperationType } from './types/ai-operation-type.enum';
 
 export interface RagQueryParams {
   tenantId: string;
   query: string;
-  /** Filter to specific entity types (default: all three) */
   entityTypes?: ('activity' | 'communication' | 'ticket')[];
-  /** Max number of context chunks to retrieve (default: 8) */
   topK?: number;
-  /** Minimum cosine similarity threshold 0–1 (default: 0.72) */
   threshold?: number;
 }
 
@@ -45,35 +41,23 @@ export interface RagSource {
   entityType: string;
   entityId: string;
   similarity: number;
-  excerpt: string; // First 200 chars of the chunk
+  excerpt: string;
 }
 
 export interface RagResponse {
   answer: string;
   sources: RagSource[];
-  confidence: number;    // Average similarity of retrieved chunks (0–1)
+  confidence: number;
   fromCache: boolean;
   latencyMs?: number;
   tokensUsed?: number;
 }
 
-// ── Constants ───────────────────────────────────────────────────────────────
-
-/** Hard cap on context string length to stay within GPT-4o's context window */
-const MAX_CONTEXT_CHARS = 12_000;
+const MAX_CONTEXT_CHARS = 12000;
 
 const RAG_SYSTEM_PROMPT = `You are an intelligent CRM assistant with access to retrieved customer interaction records.
 
-Your task: answer the user's question using ONLY the provided CRM context below.
-
-Rules:
-1. Base your answer strictly on the provided context — never invent facts.
-2. If the context does not contain enough information, say so clearly.
-3. Be concise and factual. Avoid filler phrases.
-4. When referring to specific events, cite the record type (e.g. "In an email on...").
-5. If asked about verification or blockchain status, include that information if present in the context.`;
-
-// ─────────────────────────────────────────────────────────────────────────────
+Answer ONLY using provided context. If not enough info, say so. Be concise and factual.`;
 
 @Injectable()
 export class RagService {
@@ -81,29 +65,17 @@ export class RagService {
   private readonly openai: OpenAI;
   private readonly model = 'gpt-4o';
 
-  constructor(
-    private readonly config: ConfigService,
-    private readonly vectorSearch: VectorSearchService,
-    private readonly aiLogRepo: AiLogRepository,
-    private readonly redis: RedisService,
-  ) {
-    // WHY get() not getOrThrow(): OPENAI_API_KEY is z.optional() in env.validation.ts.
-    // Throwing in the constructor crashes NestJS bootstrap for ALL modules — auth,
-    // leads, deals — even though they have no dependency on OpenAI whatsoever.
-    // Instead we defer the guard to call time in query(), where it belongs.
-    const apiKey = this.config.get<string>('OPENAI_API_KEY');
-    this.openai = new OpenAI({
-      apiKey: apiKey ?? 'not-configured',
-    });
-  }
+ constructor(
+  private readonly config: ConfigService,
+  private readonly vectorSearch: VectorSearchService,
+  private readonly redis: RedisService, // ✅ move UP
+  @Optional() private readonly aiLogRepo?: AiLogRepository, // ✅ move LAST
+) {
+  this.openai = new OpenAI({
+    apiKey: this.config.get<string>('OPENAI_API_KEY') ?? 'not-configured',
+  });
+}
 
-  /**
-   * Execute a RAG query:
-   *   embed query → retrieve chunks → build context → call LLM → return answer
-   *
-   * @param params  - Query parameters (tenant-scoped)
-   * @returns       - LLM answer with source attribution and confidence score
-   */
   async query(params: RagQueryParams): Promise<RagResponse> {
     const {
       tenantId,
@@ -113,7 +85,6 @@ export class RagService {
       threshold = 0.72,
     } = params;
 
-    // ── Cache lookup ──────────────────────────────────────────────────────────
     const paramHash = createHash('sha256')
       .update(`${query}:${[...entityTypes].sort().join(',')}:${topK}:${threshold}`)
       .digest('hex')
@@ -123,19 +94,17 @@ export class RagService {
     const cached = await this.redis.get<RagResponse>(cacheKey);
 
     if (cached) {
-      this.logger.debug(`RAG cache hit: "${query.slice(0, 50)}" (tenant: ${tenantId})`);
       this.logFireAndForget({
         tenantId,
-        operationType: 'rag_query',
+        operationType: AiOperationType.RAG_QUERY,
         prompt: `[cached] ${query}`,
         response: cached.answer,
-        servedFromCache: true,
-        metadata: { entityTypes, topK, threshold, queryHash: paramHash },
+        metadata: { entityTypes, topK, threshold },
       });
+
       return { ...cached, fromCache: true };
     }
 
-    // ── Retrieval phase ───────────────────────────────────────────────────────
     const chunks = await this.vectorSearch.search({
       tenantId,
       query,
@@ -145,10 +114,8 @@ export class RagService {
     });
 
     if (chunks.length === 0) {
-      const noContextResponse: RagResponse = {
-        answer:
-          'I could not find any relevant records in your CRM to answer this question. ' +
-          'This may be because no matching activities, communications, or tickets have been indexed yet.',
+      const response: RagResponse = {
+        answer: 'No relevant CRM records found.',
         sources: [],
         confidence: 0,
         fromCache: false,
@@ -156,148 +123,111 @@ export class RagService {
 
       this.logFireAndForget({
         tenantId,
-        operationType: 'rag_query',
+        operationType: AiOperationType.RAG_QUERY,
         prompt: query,
-        response: noContextResponse.answer,
-        metadata: { entityTypes, topK, threshold, retrivedChunks: 0 },
+        response: response.answer,
       });
 
-      return noContextResponse;
+      return response;
     }
 
-    // ── Augmentation phase ────────────────────────────────────────────────────
     const contextWindow = this.buildContextWindow(chunks);
-    const userMessage = `CRM Context:\n\n${contextWindow}\n\n---\nQuestion: ${query}`;
 
-    // ── Generation phase ──────────────────────────────────────────────────────
-    // Guard at the exact call site — only the LLM path requires OPENAI_API_KEY.
-    // Cache hits, no-chunk early returns, and audit logging all work without it.
     if (!this.config.get<string>('OPENAI_API_KEY')) {
-      throw new Error('RAG queries are unavailable: OPENAI_API_KEY is not configured.');
+      throw new Error('OPENAI_API_KEY missing');
     }
 
-    const startMs = Date.now();
+    const start = Date.now();
+
     const completion = await this.openai.chat.completions.create({
       model: this.model,
       temperature: 0.2,
-      max_tokens: 800,
       messages: [
         { role: 'system', content: RAG_SYSTEM_PROMPT },
-        { role: 'user', content: userMessage },
+        { role: 'user', content: `Context:\n${contextWindow}\n\nQuestion: ${query}` },
       ],
     });
-    const latencyMs = Date.now() - startMs;
 
-    const answer = completion.choices[0].message.content ?? 'Unable to generate a response.';
+    const latencyMs = Date.now() - start;
+
+    const answer = completion.choices[0].message.content ?? '';
     const tokensUsed = completion.usage?.total_tokens;
 
-    const avgSimilarity =
+    const confidence =
       chunks.reduce((sum, c) => sum + c.similarity, 0) / chunks.length;
 
     const sources: RagSource[] = chunks.map((c) => ({
       entityType: c.entityType,
-      entityId:   c.entityId,
-      similarity: Math.round(c.similarity * 1000) / 1000,
-      excerpt:    c.content.slice(0, 200),
+      entityId: c.entityId,
+      similarity: c.similarity,
+      excerpt: c.content.slice(0, 200),
     }));
 
     const result: RagResponse = {
       answer,
       sources,
-      confidence: Math.round(avgSimilarity * 1000) / 1000,
-      fromCache:  false,
+      confidence,
+      fromCache: false,
       latencyMs,
       tokensUsed,
     };
 
-    // ── Cache result ──────────────────────────────────────────────────────────
     await this.redis.set(cacheKey, result, CACHE_TTL.AI_SEARCH);
 
-    // ── Audit log (fire-and-forget) ───────────────────────────────────────────
     this.logFireAndForget({
       tenantId,
-      operationType: 'rag_query',
-      prompt: userMessage,
+      operationType: AiOperationType.RAG_QUERY,
+      prompt: query,
       response: answer,
       latencyMs,
-      promptTokens:     completion.usage?.prompt_tokens,
-      completionTokens: completion.usage?.completion_tokens,
-      totalTokens:      tokensUsed,
       metadata: {
-        model: this.model,
-        temperature: 0.2,
         entityTypes,
         topK,
         threshold,
-        retrievedChunks: chunks.length,
-        avgSimilarity: result.confidence,
-        queryHash: paramHash,
+        confidence,
       },
     });
-
-    this.logger.log(
-      `RAG query: "${query.slice(0, 60)}" → ${chunks.length} chunks, ` +
-      `confidence=${result.confidence}, latency=${latencyMs}ms (tenant: ${tenantId})`,
-    );
 
     return result;
   }
 
-  // ── Private Helpers ────────────────────────────────────────────────────────
-
-  /**
-   * Format retrieved chunks into a context window string.
-   * Respects MAX_CONTEXT_CHARS budget — avoids overflowing GPT's context.
-   */
   private buildContextWindow(chunks: SemanticSearchResult[]): string {
-    const lines: string[] = [];
-    let charCount = 0;
+    let output = '';
+    let size = 0;
 
-    for (const [i, chunk] of chunks.entries()) {
-      const header = `[${i + 1}] ${chunk.entityType.toUpperCase()} (id: ${chunk.entityId}, similarity: ${chunk.similarity.toFixed(3)})`;
-      const body   = chunk.content.slice(0, 1500); // Cap individual chunk at 1500 chars
-      const block  = `${header}\n${body}`;
+    for (const chunk of chunks) {
+      const block = `[${chunk.entityType}] ${chunk.content}\n\n`;
 
-      if (charCount + block.length > MAX_CONTEXT_CHARS) break;
+      if (size + block.length > MAX_CONTEXT_CHARS) break;
 
-      lines.push(block);
-      charCount += block.length + 2; // +2 for \n\n separator
+      output += block;
+      size += block.length;
     }
 
-    return lines.join('\n\n');
+    return output;
   }
 
-  /**
-   * Fire-and-forget MongoDB log write.
-   * Never throws, never awaited — must not add latency to response path.
-   */
   private logFireAndForget(params: {
     tenantId: string;
-    operationType: Parameters<AiLogRepository['create']>[0]['operationType'];
+    operationType: AiOperationType;
     prompt: string;
     response: string;
     latencyMs?: number;
-    promptTokens?: number;
-    completionTokens?: number;
-    totalTokens?: number;
-    servedFromCache?: boolean;
     metadata?: Record<string, unknown>;
   }): void {
+    if (!this.aiLogRepo) return; // ✅ CRITICAL FIX
+
     this.aiLogRepo
       .create({
-        tenantId:         params.tenantId,
-        operationType:    params.operationType,
-        prompt:           params.prompt,
-        response:         params.response,
-        latencyMs:        params.latencyMs,
-        promptTokens:     params.promptTokens,
-        completionTokens: params.completionTokens,
-        totalTokens:      params.totalTokens,
-        servedFromCache:  params.servedFromCache ?? false,
-        metadata:         params.metadata ?? {},
+        tenantId: params.tenantId,
+        operationType: params.operationType,
+        prompt: params.prompt,
+        response: params.response,
+        latencyMs: params.latencyMs,
+        metadata: params.metadata ?? {},
       })
       .catch((err: Error) => {
-        this.logger.warn(`RAG audit log write failed: ${err.message}`);
+        this.logger.warn(`RAG log failed: ${err.message}`);
       });
   }
 }
