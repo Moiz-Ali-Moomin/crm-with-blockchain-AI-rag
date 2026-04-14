@@ -122,7 +122,10 @@ services:
       GF_USERS_ALLOW_SIGN_UP: 'false'
       GF_SERVER_ROOT_URL: https://bestpurchasestore.com/grafana
       GF_SERVER_SERVE_FROM_SUB_PATH: 'true'
-      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-piechart-panel
+      # Plugins disabled — crm_internal network has no internet access (internal: true).
+      # Grafana crashes trying to reach grafana.com to download them.
+      # To add plugins, build a custom Grafana image with RUN grafana-cli plugins install ...
+      # GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-piechart-panel
     volumes:
       - grafana_data:/var/lib/grafana
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
