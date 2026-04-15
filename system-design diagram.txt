@@ -1,0 +1,61 @@
+┌──────────────────────────────┐
+│      Transport Layer         │
+│   TCP / HTTPS (TLS)          │
+└──────────────┬───────────────┘
+               ↓
+┌──────────────────────────────┐
+│   HTTP Server / Framework    │
+│   NestJS (Express under hood)│
+└──────────────┬───────────────┘
+               ↓
+┌──────────────────────────────────
+│ Middleware / Guards / Pipes / Interceptors   │
+│----------------------------------------------│
+│ Middleware: request-id, tenant-context       │
+│ Guards: JWT Auth, Roles Guard                │
+│ Pipes: Zod Validation                        │
+│ Interceptors: Logging, Response Transform    │
+└──────────────┬───────────────────
+               ↓
+┌──────────────────────────────┐
+│      Controller Layer        │
+│   NestJS Controllers         │
+└──────────────┬───────────────┘
+               ↓
+┌──────────────────────────────┐
+│     DTO / Mapping Layer      │
+│   DTOs, Zod Schemas          │
+└──────────────┬───────────────┘
+               ↓
+┌──────────────────────────────┐
+│  Application Layer (UseCase) │
+│   CreateUserUseCase, etc.    │
+└──────────────┬───────────────┘
+               ↓
+┌──────────────────────────────┐
+│       Domain Layer (Core)    │
+│   Entities, Rules (Pure TS)  │
+└──────────────┬───────────────┘
+               ↓
+┌──────────────────────────────┐
+│   Repository Interface Layer │
+│   TS Interfaces              │
+└──────────────┬───────────────┘
+               ↓
+┌──────────────────────────────────
+│        Infrastructure Layer                  │
+│----------------------------------------------│
+│ DB: Prisma + PostgreSQL                      │
+│ Cache: Redis                                 │
+│ APIs: Stripe, Blockchain RPC, AI APIs        │
+└──────────────┬───────────────────
+               ↓
+┌──────────────────────────────┐
+│        Event / Queue Layer   │
+│   BullMQ / Kafka / Redis     │
+└──────────────┬───────────────┘
+               ↓
+┌──────────────────────────────┐
+│     Workers / Consumers      │
+│ AI, Blockchain, Payments     │
+└──────────────────────────────┘
