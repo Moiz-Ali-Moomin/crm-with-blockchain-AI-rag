@@ -26,7 +26,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
-import { createHash, randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import { VectorSearchService, SemanticSearchResult } from './vector-search.service';
 import { AiLogRepository } from './repositories/ai-log.repository';
 import { RedisService } from '../../core/cache/redis.service';

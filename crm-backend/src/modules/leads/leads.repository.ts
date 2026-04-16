@@ -87,7 +87,7 @@ export class LeadsRepository {
     return this.prisma.lead.delete({ where: { id } });
   }
 
-  async countByStatus(tenantId: string) {
+  async countByStatus(_tenantId: string) {
     // Analytics query - grouped by status
     return this.prisma.lead.groupBy({
       by: ['status'],

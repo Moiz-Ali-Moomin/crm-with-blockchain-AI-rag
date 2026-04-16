@@ -9,8 +9,6 @@
  * queue names, job structures, or WebSocket implementation.
  */
 
-import { DomainEvent } from '../../domain/events/deal.events';
-
 export const EVENT_PUBLISHER_PORT = Symbol('EVENT_PUBLISHER_PORT');
 
 export interface DealCreatedEventData {

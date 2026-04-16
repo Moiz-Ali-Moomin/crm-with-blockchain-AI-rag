@@ -5,7 +5,6 @@
  * patch the pg, ioredis, and http modules at require time.
  */
 
-// eslint-disable-next-line import/order
 import './tracing';
 
 import { NestFactory } from '@nestjs/core';

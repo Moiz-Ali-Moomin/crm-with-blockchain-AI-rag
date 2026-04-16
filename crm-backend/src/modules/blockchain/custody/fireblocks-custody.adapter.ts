@@ -33,11 +33,6 @@ const CHAIN_TO_ASSET: Record<SupportedChain, string> = {
   ETHEREUM: 'USDC',
 };
 
-const CHAIN_TO_NATIVE_ASSET: Record<SupportedChain, string> = {
-  POLYGON: 'MATIC_POLYGON',
-  BASE: 'ETH_BASE_ETH',
-  ETHEREUM: 'ETH',
-};
 
 @Injectable()
 export class FireblocksCustodyAdapter implements ICustodyProvider {
@@ -72,8 +67,6 @@ export class FireblocksCustodyAdapter implements ICustodyProvider {
     label?: string;
     chain: SupportedChain;
   }): Promise<CustodyWallet> {
-    const vaultId = this.config.getOrThrow<string>('FIREBLOCKS_VAULT_ACCOUNT_ID');
-
     // Create a vault account for this tenant wallet
     const { data: vaultAccount } = await this.http.post('/v1/vault/accounts', {
       name: params.label ?? `tenant-${params.tenantId}`,

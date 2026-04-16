@@ -27,7 +27,7 @@
  * never acceptable in production (env validation will catch this).
  */
 
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import { Logger } from '@nestjs/common';
 
 const ALGORITHM  = 'aes-256-gcm';

@@ -22,7 +22,6 @@ import { Job, Queue } from 'bullmq';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
-import { Chain, Prisma } from '@prisma/client';
 import { QUEUE_NAMES, QUEUE_JOB_OPTIONS } from '../../core/queue/queue.constants';
 import { PaymentsService } from '../../modules/payments/payments.service';
 import { PrismaService } from '../../core/database/prisma.service';

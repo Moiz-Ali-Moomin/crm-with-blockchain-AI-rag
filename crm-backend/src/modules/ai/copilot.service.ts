@@ -4,7 +4,6 @@ import { PrismaService } from '../../core/database/prisma.service';
 import { RedisService } from '../../core/cache/redis.service';
 import { CACHE_KEYS, CACHE_TTL } from '../../core/cache/cache-keys';
 import { AiLogRepository } from './repositories/ai-log.repository';
-import { AiOperationType } from './types/ai-operation-type.enum';
 import OpenAI from 'openai';
 import { Prisma } from '@prisma/client';
 

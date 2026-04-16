@@ -119,7 +119,7 @@ export class UsersService {
   }
 
   async updateRole(id: string, dto: UpdateRoleDto, actorRole: string) {
-    const user = await this.findById(id);
+    await this.findById(id);
     const targetRole = dto.role as UserRole;
     const actor = actorRole as UserRole;
 

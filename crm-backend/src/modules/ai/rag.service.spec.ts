@@ -4,6 +4,9 @@ import { RagService, RagQueryParams, RagResponse } from './rag.service';
 import { VectorSearchService, SemanticSearchResult } from './vector-search.service';
 import { AiLogRepository } from './repositories/ai-log.repository';
 import { RedisService } from '../../core/cache/redis.service';
+import { CircuitBreakerService } from '../../core/resilience/circuit-breaker.service';
+import { AiCostControlService } from './cost-control.service';
+import { BusinessMetricsService } from '../../core/metrics/business-metrics.service';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -48,6 +51,20 @@ const mockOpenAiCompletion = {
 
 const mockOpenAiCreate = jest.fn().mockResolvedValue(mockOpenAiCompletion);
 
+const mockCircuitBreaker = {
+  // Execute the callback directly — no circuit-breaking in tests
+  execute: jest.fn().mockImplementation((_name: string, fn: () => unknown) => fn()),
+};
+
+const mockCostControl = {
+  assertQuota: jest.fn().mockResolvedValue(undefined),
+  recordUsage: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockBusinessMetrics = {
+  recordAiUsage: jest.fn(),
+};
+
 // Intercept OpenAI constructor so no real API key is required
 jest.mock('openai', () => {
   return jest.fn().mockImplementation(() => ({
@@ -83,6 +100,9 @@ describe('RagService', () => {
         { provide: VectorSearchService, useValue: mockVectorSearch },
         { provide: AiLogRepository, useValue: mockAiLogRepo },
         { provide: RedisService, useValue: mockRedis },
+        { provide: CircuitBreakerService, useValue: mockCircuitBreaker },
+        { provide: AiCostControlService, useValue: mockCostControl },
+        { provide: BusinessMetricsService, useValue: mockBusinessMetrics },
       ],
     }).compile();
 

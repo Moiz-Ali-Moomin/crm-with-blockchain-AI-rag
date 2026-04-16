@@ -1,63 +1,191 @@
-┌──────────────────────────────┐
-│      Transport Layer         │
-│   TCP / HTTPS (TLS)          │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│   HTTP Server / Framework    │
-│   NestJS (Express under hood)│
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────────
-│ Middleware / Guards / Pipes / Interceptors   │
-│----------------------------------------------│
-│ Middleware: request-id, tenant-context       │
-│ Guards: JWT Auth, Roles Guard                │
-│ Pipes: Zod Validation                        │
-│ Interceptors: Logging, Response Transform    │
-└──────────────┬───────────────────
-               ↓
-┌──────────────────────────────┐
-│      Controller Layer        │
-│   NestJS Controllers         │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│     DTO / Mapping Layer      │
-│   DTOs, Zod Schemas          │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│  Application Layer (UseCase) │
-│   CreateUserUseCase, etc.    │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│       Domain Layer (Core)    │
-│   Entities, Rules (Pure TS)  │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│   Repository Interface Layer │
-│   TS Interfaces              │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────────
-│        Infrastructure Layer                  │
-│----------------------------------------------│
-│ DB: Prisma + PostgreSQL                      │
-│ Cache: Redis                                 │
-│ APIs: Stripe, Blockchain RPC, AI APIs        │
-└──────────────┬───────────────────
-               ↓
-┌──────────────────────────────┐
-│        Event / Queue Layer   │
-│   BullMQ / Kafka / Redis     │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│     Workers / Consumers      │
-│ AI, Blockchain, Payments     │
-└──────────────────────────────┘
+================================================================================
+                         🌐 FRONTEND LAYER (Next.js)
+================================================================================
+ ┌────────────────────────────────────────────────────────────────────────────┐
+ │ Next.js App (App Router)                                                   │
+ │                                                                            │
+ │ Pages: Deals | Leads | Dashboard | AI Copilot | Notifications              │
+ │                                                                            │
+ │ - React Query (API state)                                                  │
+ │ - WebSocket Client (real-time updates)                                     │
+ │ - Wagmi + RainbowKit (Wallet UI)                                           │
+ │ - viem / ethers.js (contract interaction)                                  │
+ │                                                                            │
+ │ ⚠️ Client-side signing ONLY (Non-custodial)                                │
+ └───────────────┬────────────────────────────────────────────────────────────┘
+                 │ REST / WebSocket
+                 ▼
+
+================================================================================
+                      👛 WALLET & WEB3 CLIENT LAYER
+================================================================================
+ ┌────────────────────────────────────────────────────────────────────────────┐
+ │ Wallet Providers                                                           │
+ │                                                                            │
+ │ - MetaMask                                                                 │
+ │ - WalletConnect                                                            │
+ │ - Coinbase Wallet                                                          │
+ │                                                                            │
+ │ - Transaction Signing (Client-side)                                        │
+ │ - ABI-based Smart Contract Calls                                           │
+ └───────────────┬────────────────────────────────────────────────────────────┘
+                 │ JSON-RPC
+                 ▼
+
+================================================================================
+                       🌍 RPC / BLOCKCHAIN ACCESS LAYER
+================================================================================
+ ┌────────────────────────────────────────────────────────────────────────────┐
+ │ RPC Providers                                                              │
+ │                                                                            │
+ │ - Alchemy (Primary)                                                        │
+ │ - Fallback RPC Provider                                                    │
+ │                                                                            │
+ │ Chains: Ethereum | Polygon (EVM)                                           │
+ └───────────────┬────────────────────────────────────────────────────────────┘
+                 │ JSON-RPC
+                 ▼
+
+================================================================================
+                           ⛓️ BLOCKCHAIN LAYER
+================================================================================
+ ┌────────────────────────────────────────────────────────────────────────────┐
+ │ Smart Contracts                                                            │
+ │ - DealHashRegistry.sol                                                     │
+ │                                                                            │
+ │ Transaction Flow:                                                          │
+ │ Frontend → Wallet → RPC → Blockchain                                       │
+ │                                                                            │
+ │ Event Flow:                                                                │
+ │ Blockchain → Alchemy Webhooks → Backend                                    │
+ └───────────────┬────────────────────────────────────────────────────────────┘
+                 │ Webhooks / Events
+                 ▼
+
+================================================================================
+                         🚪 BACKEND (NestJS API)
+================================================================================
+ ┌────────────────────────────────────────────────────────────────────────────┐
+ │ API Gateway (NestJS Modular Monolith + DDD)                                │
+ │                                                                            │
+ │ Middleware:                                                                │
+ │ - Request ID (Tracing)                                                     │
+ │ - Tenant Context (Multi-tenant)                                            │
+ │ - Interceptors (Audit logs, transform)                                     │
+ │                                                                            │
+ │ Core Modules:                                                              │
+ │                                                                            │
+ │ Auth Module                                                                │
+ │ - JWT + RBAC                                                               │
+ │ - SIWE (wallet signature verification)                                     │
+ │                                                                            │
+ │ Deals Module (DDD)                                                         │
+ │ - Domain | Application | Infrastructure                                    │
+ │                                                                            │
+ │ Payments Module                                                            │
+ │ - State Machine                                                            │
+ │                                                                            │
+ │ Blockchain Module                                                          │
+ │ - Smart contract interaction                                               │
+ │ - Custody Layer:                                                           │
+ │     • Fireblocks (Custodial)                                               │
+ │     • Local Wallet Adapter                                                 │
+ │ - Blockchain Listener                                                      │
+ │                                                                            │
+ │ AI Module                                                                  │
+ │ - RAG Pipeline                                                             │
+ │ - Embeddings + Vector Search                                               │
+ │ - Copilot Service                                                          │
+ │                                                                            │
+ │ Notifications Module                                                       │
+ │ Webhooks Module                                                            │
+ │                                                                            │
+ │ ⚠️ Backend DOES NOT sign non-custodial transactions                        │
+ └───────────────┬────────────────────────────────────────────────────────────┘
+                 │
+     ┌───────────┴────────────┐
+     │                        │
+     ▼                        ▼
+
+====================== ⚡ SYNCHRONOUS FLOW ======================
+Frontend → API Gateway → Modules → Database / Response
 
 
+====================== 🔁 ASYNC EVENT SYSTEM ====================
+
+                 ┌──────────────────────────────┐
+                 │     BullMQ + Redis Queue     │
+                 │  (Retry, Backoff, DLQ)       │
+                 └──────────────┬──────────────┘
+                                │
+      ┌──────────────┬──────────────┬──────────────┬──────────────┐
+      ▼              ▼              ▼              ▼              ▼
+
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│ Payment      │ │ Blockchain   │ │ Transaction  │ │ Notification │ │ AI Embedding │
+│ Worker       │ │ Events Worker│ │ Confirmation │ │ Worker       │ │ Worker       │
+└──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+       │                │                │                │                │
+       ▼                ▼                ▼                ▼                ▼
+
+
+================================================================================
+                            🧠 AI PIPELINE (RAG)
+================================================================================
+ Document Ingestion
+        ↓
+ Embedding Worker (Async)
+        ↓
+ Vector DB (Embeddings Storage)
+        ↓
+ Retrieval Layer (Similarity Search)
+        ↓
+ RAG Engine
+        ↓
+ AI Copilot (API + WebSocket Streaming)
+
+================================================================================
+                            🗄️ DATA LAYER
+================================================================================
+ ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+ │ PostgreSQL   │   │ MongoDB      │   │ Redis        │   │ Vector DB    │
+ │ (Prisma)     │   │ (Logs/AI)    │   │ Cache/Queue  │   │ Embeddings   │
+ └──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
+
+================================================================================
+                           📡 REAL-TIME SYSTEM
+================================================================================
+ WebSocket Gateway (NestJS)
+ - Deal updates
+ - Notifications
+ - AI streaming responses
+
+================================================================================
+                           🔐 SECURITY
+================================================================================
+ - JWT Authentication + RBAC
+ - SIWE (wallet signature verification)
+ - Replay attack protection
+ - Rate limiting
+ - Secrets management (Vault)
+
+================================================================================
+                           🔁 SAGA ORCHESTRATION
+================================================================================
+ 1. Create Deal
+ 2. Process Payment
+ 3. Verify on Blockchain
+ 4. Send Notification
+
+ Failure:
+ - Refund Payment
+ - Rollback Deal
+
+================================================================================
+                           📊 OBSERVABILITY
+================================================================================
+ - Prometheus → Metrics
+ - Grafana → Dashboards
+ - Loki → Logs
+ - Request ID → Distributed tracing
+================================================================================

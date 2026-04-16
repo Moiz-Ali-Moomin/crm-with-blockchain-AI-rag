@@ -252,7 +252,7 @@ export class AuthService {
   }
 
   private sanitizeUser(user: Record<string, any>) {
-    const { passwordHash, ...safe } = user;
+    const { passwordHash: _passwordHash, ...safe } = user;
     return safe;
   }
 }

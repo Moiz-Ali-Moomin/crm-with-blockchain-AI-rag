@@ -145,7 +145,7 @@ export class WsGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayD
     return sockets !== undefined && sockets.size > 0;
   }
 
-  getOnlineUsersInTenant(tenantId: string): string[] {
+  getOnlineUsersInTenant(_tenantId: string): string[] {
     return Array.from(this.connectedUsers.entries())
       .filter(([, sockets]) => sockets.size > 0)
       .map(([userId]) => userId);

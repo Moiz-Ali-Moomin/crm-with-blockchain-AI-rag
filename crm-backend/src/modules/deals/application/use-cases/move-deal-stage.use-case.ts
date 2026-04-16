@@ -131,7 +131,7 @@ export class MoveDealStageUseCase {
     // ── 5. Process domain events ──────────────────────────────────────────
     const wonEvent   = domainEvents.find((e): e is DealWonEvent   => e instanceof DealWonEvent);
     const lostEvent  = domainEvents.find((e): e is DealLostEvent  => e instanceof DealLostEvent);
-    const stageEvent = domainEvents.find((e): e is DealStageChangedEvent => e instanceof DealStageChangedEvent);
+    const _stageEvent = domainEvents.find((e): e is DealStageChangedEvent => e instanceof DealStageChangedEvent);
 
     // ── 5a. Blockchain registration (WON only) ────────────────────────────
     if (wonEvent) {

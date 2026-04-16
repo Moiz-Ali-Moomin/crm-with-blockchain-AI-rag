@@ -13,7 +13,7 @@
  * Workers can set context manually via DomainLogger.setContext().
  */
 
-import { Injectable, LoggerService, Scope } from '@nestjs/common';
+import { Injectable, LoggerService } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Inject } from '@nestjs/common';
 import { AsyncLocalStorage } from 'async_hooks';

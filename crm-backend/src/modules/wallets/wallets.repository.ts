@@ -72,7 +72,7 @@ export class WalletsRepository {
     });
   }
 
-  suspend(id: string, tenantId: string): Promise<Wallet> {
+  suspend(id: string, _tenantId: string): Promise<Wallet> {
     return this.prisma.wallet.update({
       where: { id },
       data: { status: WalletStatus.SUSPENDED },

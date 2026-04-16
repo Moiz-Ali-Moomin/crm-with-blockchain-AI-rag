@@ -158,7 +158,7 @@ export class PipelinesService {
 
   // ── Private helpers ─────────────────────────────────────────────────────────
 
-  private async _clearDefaultFlag(tenantId: string) {
+  private async _clearDefaultFlag(_tenantId: string) {
     // We need to clear existing default pipeline for this tenant.
     // Since Prisma middleware scopes by tenant, this findFirst will stay within tenant.
     const existing = await this.pipelinesRepo.findDefault();

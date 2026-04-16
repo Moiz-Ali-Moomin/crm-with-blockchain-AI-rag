@@ -25,7 +25,6 @@ import {
 import { StagePipelineMismatchError } from '../../domain/errors/deal.errors';
 import { CreateDealDto } from '../../deals.dto';
 import { WS_EVENTS } from '../../../../core/websocket/ws.service';
-import { DealReadModel } from '../ports/deal.repository.port';
 import { toEventPayload } from '../mappers/deal-event-payload.mapper';
 
 @Injectable()

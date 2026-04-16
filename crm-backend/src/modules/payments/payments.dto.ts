@@ -4,7 +4,6 @@ import {
   IsNumber,
   IsObject,
   IsOptional,
-  IsPositive,
   IsString,
   IsUUID,
   Max,

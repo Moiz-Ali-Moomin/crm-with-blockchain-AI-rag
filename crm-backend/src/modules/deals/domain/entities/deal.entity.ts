@@ -174,7 +174,6 @@ export class DealEntity {
       );
     } else {
       // Regular stage move within OPEN pipeline
-      const onHoldStatus = DealStatus.ON_HOLD;
       // If currently ON_HOLD and moving to a regular stage, restore to OPEN
       if (this.status.value === 'ON_HOLD') {
         nextStatus = DealStatus.OPEN;

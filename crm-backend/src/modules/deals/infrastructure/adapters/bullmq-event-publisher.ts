@@ -11,7 +11,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { WsService, WS_EVENTS } from '../../../../core/websocket/ws.service';
+import { WsService } from '../../../../core/websocket/ws.service';
 import { QUEUE_NAMES, QUEUE_JOB_OPTIONS } from '../../../../core/queue/queue.constants';
 import { EventPublisherPort } from '../../application/ports/event-publisher.port';
 

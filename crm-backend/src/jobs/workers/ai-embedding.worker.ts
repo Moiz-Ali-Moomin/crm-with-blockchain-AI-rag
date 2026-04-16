@@ -16,7 +16,7 @@
  */
 
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Job, UnrecoverableError } from 'bullmq';
+import { Job } from 'bullmq';
 import { Logger, Inject } from '@nestjs/common';
 import { QUEUE_NAMES } from '../../core/queue/queue.constants';
 import { IEmbeddingService, EMBEDDING_SERVICE } from '../../modules/ai/embedding.interface';
