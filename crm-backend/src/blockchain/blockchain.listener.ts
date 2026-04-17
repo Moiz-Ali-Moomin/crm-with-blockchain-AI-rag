@@ -3,24 +3,31 @@
  *
  * Real-time USDC Transfer event ingestion for the payment rail.
  *
- * Mode selection:
- *   1. WebSocket subscription (preferred) — zero-latency push events via ethers Contract.on()
- *   2. HTTP polling fallback — activated automatically when WS is unavailable or drops
- *   3. Automatic mode switching — background watchdog checks every 30 s and upgrades
- *      back to WS once EthereumProviderService reports wsConnected = true
+ * Leader election (Redis SET NX):
+ *   On startup each instance races for `listener_leader:{chain}` (TTL 30 s).
+ *   Winner becomes ACTIVE and runs WS / HTTP polling.
+ *   Loser becomes STANDBY: no subscriptions, no polling — only a lightweight
+ *   probe loop that watches for the leader key to disappear, then re-races.
+ *   Active instance renews its key every 10 s; if renewal fails it self-demotes
+ *   to standby so the next standby probe can take over immediately.
+ *
+ * Mode override (LISTENER_MODE env var):
+ *   active  — always active, bypass Redis election
+ *   standby — always standby, bypass Redis election
+ *   auto    — Redis election (default)
+ *
+ * WS ↔ HTTP fallback (unchanged):
+ *   1. WebSocket subscription (preferred) — zero-latency push events
+ *   2. HTTP polling fallback — activated when WS is unavailable or drops
+ *   3. Watchdog — upgrades back to WS every 30 s once WS is healthy
  *
  * Idempotency:
- *   Every event is enqueued with jobId = `transfer:{txHash}:{logIndex}`.
- *   BullMQ drops the duplicate silently — reconnects and polling overlaps are safe.
- *
- * Fault tolerance:
- *   - Never throws in the event handler; errors are logged and swallowed
- *   - Never crashes the process on enqueue failure
- *   - Polling errors are caught per-tick; the timer always reschedules
+ *   jobId = `transfer:{txHash}:{logIndex}` — BullMQ drops duplicates silently.
  *
  * Environment variables:
  *   CHAIN_NAME           — label embedded in queued jobs (default: "ETHEREUM")
  *   POLLING_INTERVAL_MS  — HTTP poll cadence when WS is down (default: 12 000 ms)
+ *   LISTENER_MODE        — active | standby | auto (default: auto)
  */
 
 import {
@@ -36,15 +43,12 @@ import { ethers } from 'ethers';
 import { EthereumProviderService } from './blockchain.service';
 import { UsdcContractService } from './usdc.contract';
 import { QUEUE_NAMES, QUEUE_JOB_OPTIONS } from '../core/queue/queue.constants';
+import { LeaderElectionService } from '../core/leader/leader-election.service';
 
-/** Scan back this many blocks on first connection to catch any events missed during startup */
-const SUBSCRIBE_LOOKBACK_BLOCKS = 20;
-/** Default HTTP polling cadence — ~1 Ethereum block */
-const DEFAULT_POLL_INTERVAL_MS  = 12_000;
-/** Watchdog checks every 30 s whether WS state has changed */
-const MODE_WATCHDOG_INTERVAL_MS = 30_000;
+const SUBSCRIBE_LOOKBACK_BLOCKS  = 20;
+const DEFAULT_POLL_INTERVAL_MS   = 12_000;
+const MODE_WATCHDOG_INTERVAL_MS  = 30_000;
 
-/** Shape of every job pushed to the blockchain-events queue */
 export interface IncomingTransferJob {
   txHash:      string;
   blockNumber: number;
@@ -66,11 +70,18 @@ export class PaymentListenerService
 {
   private readonly logger = new Logger(PaymentListenerService.name);
 
+  // WS / polling state (unchanged)
   private _mode:            ListenerMode = 'idle';
   private _wsContract:      ethers.Contract | null = null;
   private _pollTimer:       NodeJS.Timeout | null = null;
   private _watchdogTimer:   NodeJS.Timeout | null = null;
   private _lastPolledBlock  = 0;
+
+  // Leader election state
+  private _leaderState:     'active' | 'standby' = 'standby';
+  private _renewalTimer:    NodeJS.Timeout | null = null;
+  private _standbyTimer:    NodeJS.Timeout | null = null;
+
   private readonly _chain:  string;
   private readonly _pollMs: number;
 
@@ -78,6 +89,7 @@ export class PaymentListenerService
     private readonly provider:    EthereumProviderService,
     private readonly usdc:        UsdcContractService,
     private readonly config:      ConfigService,
+    private readonly leader:      LeaderElectionService,
     @InjectQueue(QUEUE_NAMES.BLOCKCHAIN_EVENTS)
     private readonly eventsQueue: Queue,
   ) {
@@ -88,19 +100,96 @@ export class PaymentListenerService
   // ─── Lifecycle ─────────────────────────────────────────────────────────────
 
   async onApplicationBootstrap(): Promise<void> {
-    await this.activate();
-    this.startWatchdog();
+    const isActive = await this.leader.tryAcquire(this._chain);
+    if (isActive) {
+      await this.becomeActive();
+    } else {
+      this.becomeStandby();
+    }
   }
 
   async onApplicationShutdown(): Promise<void> {
+    this.stopRenewal();
+    this.stopStandbyProbe();
     this.stopWatchdog();
     this.stopPolling();
     await this.teardownWsSubscription();
+
+    if (this._leaderState === 'active') {
+      await this.leader.release(this._chain);
+    }
   }
 
-  // ─── Mode Activation ───────────────────────────────────────────────────────
+  // ─── Leader State Transitions ──────────────────────────────────────────────
 
-  private async activate(): Promise<void> {
+  private async becomeActive(): Promise<void> {
+    this._leaderState = 'active';
+    this.stopStandbyProbe();
+    await this.activateIngestion();
+    this.startWatchdog();
+    this.startRenewal();
+  }
+
+  private async becomeStandby(): Promise<void> {
+    this._leaderState = 'standby';
+    this.stopRenewal();
+    this.stopWatchdog();
+    this.stopPolling();
+    await this.teardownWsSubscription();
+    this._mode = 'idle';
+    this.startStandbyProbe();
+  }
+
+  // ─── Renewal (active instances only) ──────────────────────────────────────
+
+  private startRenewal(): void {
+    this._renewalTimer = setInterval(async () => {
+      const ok = await this.leader.renew(this._chain).catch(() => false);
+      if (!ok) {
+        await this.becomeStandby();
+      }
+    }, this.leader.renewIntervalMs);
+  }
+
+  private stopRenewal(): void {
+    if (this._renewalTimer) {
+      clearInterval(this._renewalTimer);
+      this._renewalTimer = null;
+    }
+  }
+
+  // ─── Standby Probe (standby instances only) ────────────────────────────────
+
+  private startStandbyProbe(): void {
+    this._standbyTimer = setInterval(async () => {
+      if (this._leaderState !== 'standby') return;
+
+      try {
+        const absent = await this.leader.isLeaderAbsent(this._chain);
+        if (!absent) return;
+
+        const acquired = await this.leader.tryAcquire(this._chain);
+        if (acquired) {
+          await this.becomeActive();
+        }
+      } catch (err) {
+        this.logger.error(
+          `[${this._chain}] standby probe error: ${(err as Error).message}`,
+        );
+      }
+    }, this.leader.standbyProbeIntervalMs);
+  }
+
+  private stopStandbyProbe(): void {
+    if (this._standbyTimer) {
+      clearInterval(this._standbyTimer);
+      this._standbyTimer = null;
+    }
+  }
+
+  // ─── Ingestion Activation ──────────────────────────────────────────────────
+
+  private async activateIngestion(): Promise<void> {
     if (this.provider.wsConnected) {
       await this.startWsSubscription();
     } else {
@@ -113,7 +202,7 @@ export class PaymentListenerService
   private async startWsSubscription(): Promise<void> {
     if (this._mode === 'ws') return;
 
-    this.stopPolling(); // cancel any active HTTP polling
+    this.stopPolling();
 
     try {
       const currentBlock    = await this.provider.getBlockNumber();
@@ -178,7 +267,6 @@ export class PaymentListenerService
         `[${this._chain}] PaymentListener: could not get current block for polling baseline: ` +
         `${(err as Error).message}`,
       );
-      // Start from 0 — will catch up on next tick
       this._lastPolledBlock = 0;
     }
 
@@ -201,7 +289,7 @@ export class PaymentListenerService
   private schedulePoll(): void {
     this._pollTimer = setTimeout(async () => {
       this._pollTimer = null;
-      if (this._mode !== 'polling') return; // mode changed — stop
+      if (this._mode !== 'polling') return;
 
       try {
         await this.pollNewBlocks();
@@ -211,19 +299,18 @@ export class PaymentListenerService
         );
       }
 
-      // Reschedule only if still in polling mode
       if (this._mode === 'polling') this.schedulePoll();
     }, this._pollMs);
   }
 
   private async pollNewBlocks(): Promise<void> {
     const currentBlock = await this.provider.getBlockNumber();
-    if (currentBlock <= this._lastPolledBlock) return; // no new blocks
+    if (currentBlock <= this._lastPolledBlock) return;
 
     const fromBlock = this._lastPolledBlock + 1;
     const toBlock   = currentBlock;
 
-    const filter = this.usdc.buildInboundTransferFilter(); // all inbound transfers
+    const filter = this.usdc.buildInboundTransferFilter();
     const logs   = await this.provider.getLogs(filter, fromBlock, toBlock);
 
     this.logger.debug(
@@ -250,18 +337,15 @@ export class PaymentListenerService
     this._lastPolledBlock = toBlock;
   }
 
-  // ─── Mode Watchdog ─────────────────────────────────────────────────────────
+  // ─── Mode Watchdog (WS ↔ HTTP) ────────────────────────────────────────────
 
-  /**
-   * Periodically checks whether the WS/HTTP mode should be switched.
-   * - polling + wsConnected  → upgrade to WS
-   * - ws + !wsConnected      → downgrade to HTTP polling
-   */
   private startWatchdog(): void {
     this._watchdogTimer = setInterval(async () => {
+      if (this._leaderState !== 'active') return;
+
       if (this._mode === 'polling' && this.provider.wsConnected) {
         this.logger.log(`[${this._chain}] PaymentListener: WS back — upgrading from polling`);
-        this._mode = 'idle'; // prevent re-entry
+        this._mode = 'idle';
         this.stopPolling();
         await this.startWsSubscription();
       } else if (this._mode === 'ws' && !this.provider.wsConnected) {
@@ -283,8 +367,6 @@ export class PaymentListenerService
   // ─── Queue Producer ────────────────────────────────────────────────────────
 
   private async enqueueTransfer(job: IncomingTransferJob): Promise<void> {
-    // jobId = transfer:{txHash}:{logIndex} — BullMQ silently drops duplicates.
-    // This makes reconnects, polling overlaps, and retries all safe.
     const jobId = `transfer:${job.txHash}:${job.logIndex}`;
 
     try {
@@ -299,7 +381,6 @@ export class PaymentListenerService
         `(${job.txHash.slice(0, 12)}…)`,
       );
     } catch (err) {
-      // Never propagate — a queue error must not crash the listener
       this.logger.error(
         `[${this._chain}] PaymentListener: failed to enqueue ${jobId}: ${(err as Error).message}`,
       );

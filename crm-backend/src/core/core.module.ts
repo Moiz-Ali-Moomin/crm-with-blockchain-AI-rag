@@ -40,6 +40,7 @@ import { BusinessMetricsService } from './metrics/business-metrics.service';
 import { MetricsController } from './metrics/metrics.controller';
 import { SlidingWindowRateLimiter } from '../common/rate-limit/sliding-window.service';
 import { IdempotencyMiddleware } from '../common/middleware/idempotency.middleware';
+import { LeaderElectionService } from './leader/leader-election.service';
 
 const isMongoEnabled = !!process.env.MONGO_URI;
 
@@ -94,6 +95,7 @@ const isMongoEnabled = !!process.env.MONGO_URI;
     BusinessMetricsService,
     SlidingWindowRateLimiter,
     IdempotencyMiddleware,
+    LeaderElectionService,
 
     // AuditLogInterceptor now depends on BusinessMetricsService
     AuditLogInterceptor,
@@ -117,6 +119,7 @@ const isMongoEnabled = !!process.env.MONGO_URI;
     BusinessMetricsService,
     SlidingWindowRateLimiter,
     IdempotencyMiddleware,
+    LeaderElectionService,
 
     ...(isMongoEnabled ? [EventLogRepository] : []),
   ],

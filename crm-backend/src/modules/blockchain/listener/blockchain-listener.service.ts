@@ -9,15 +9,20 @@
  *   → PaymentsService.handleTxDetected() → transaction-confirmation queue
  *   → TransactionConfirmationWorker → PaymentsService.handleConfirmationUpdate()
  *
- * The listener's only job is event ingestion — it never writes to the DB directly.
- * All business logic is in the worker, keeping this path lean and fault-tolerant.
+ * Leader election (per-chain Redis SET NX):
+ *   Each chain independently races for `listener_leader:{chain}` (TTL 30 s).
+ *   Winner runs WS / HTTP ingestion and renews its key every 10 s.
+ *   Loser enters a standby probe loop (5 s interval); takes over if key expires.
+ *   If renewal fails the active instance self-demotes to standby immediately.
  *
- * Supports multiple chains concurrently. Each chain gets its own provider instance.
+ * WS ↔ HTTP fallback (unchanged):
+ *   WebSocket is preferred; HTTP polling is the automatic fallback.
+ *   Reconnect uses exponential backoff capped at 60 s.
  *
- * Reconnect strategy:
- *   - WebSocket providers: re-subscribe on 'error' and 'close' events
- *   - HTTP providers: polling every POLL_INTERVAL_MS (fallback for environments
- *     where WebSocket is not available)
+ * Mode override (LISTENER_MODE env var):
+ *   active  — always active for every chain, skip Redis
+ *   standby — always standby for every chain, skip Redis
+ *   auto    — per-chain Redis election (default)
  */
 
 import {
@@ -31,40 +36,37 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ethers } from 'ethers';
 import { QUEUE_NAMES, QUEUE_JOB_OPTIONS } from '../../../core/queue/queue.constants';
+import { LeaderElectionService } from '../../../core/leader/leader-election.service';
 
-// Minimal ERC-20 Transfer event ABI
 const ERC20_TRANSFER_ABI = [
   'event Transfer(address indexed from, address indexed to, uint256 value)',
 ];
 
-// USDC contract addresses per chain
 const USDC_CONTRACTS: Record<string, string> = {
-  POLYGON: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
-  BASE: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  POLYGON:  '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+  BASE:     '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
   ETHEREUM: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
 };
 
 const RPC_ENV_KEYS: Record<string, string> = {
-  POLYGON: 'BLOCKCHAIN_RPC_URL_POLYGON',
-  BASE: 'BLOCKCHAIN_RPC_URL_BASE',
+  POLYGON:  'BLOCKCHAIN_RPC_URL_POLYGON',
+  BASE:     'BLOCKCHAIN_RPC_URL_BASE',
   ETHEREUM: 'BLOCKCHAIN_RPC_URL_ETHEREUM',
 };
 
-// How many blocks to look back on reconnect (avoid replaying too many events)
 const RECONNECT_LOOKBACK_BLOCKS = 20;
-// Reconnect delay with exponential backoff cap
-const MAX_RECONNECT_DELAY_MS = 60_000;
+const MAX_RECONNECT_DELAY_MS    = 60_000;
 
 export interface BlockchainTransferEvent {
-  chain: string;
-  txHash: string;
+  chain:       string;
+  txHash:      string;
   blockNumber: number;
-  logIndex: number;
+  logIndex:    number;
   fromAddress: string;
-  toAddress: string;
-  /** Raw amount as string (USDC 6 decimals — no BigInt serialisation issues) */
-  amountRaw: string;
-  timestamp: number;
+  toAddress:   string;
+  /** Raw amount as string (USDC 6 decimals) */
+  amountRaw:   string;
+  timestamp:   number;
 }
 
 @Injectable()
@@ -72,82 +74,195 @@ export class BlockchainListenerService
   implements OnApplicationBootstrap, OnApplicationShutdown
 {
   private readonly logger = new Logger(BlockchainListenerService.name);
-  /** Active providers keyed by chain name */
-  private providers = new Map<string, ethers.Provider>();
-  /** Active contract instances keyed by chain name */
-  private contracts = new Map<string, ethers.Contract>();
-  /** Reconnect timers */
+
+  // Ingestion resources keyed by chain
+  private providers       = new Map<string, ethers.Provider>();
+  private contracts       = new Map<string, ethers.Contract>();
   private reconnectTimers = new Map<string, NodeJS.Timeout>();
+
+  // Leader election resources keyed by chain
+  private leaderStates    = new Map<string, 'active' | 'standby'>();
+  private renewalTimers   = new Map<string, NodeJS.Timeout>();
+  private standbyTimers   = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly config: ConfigService,
+    private readonly leader: LeaderElectionService,
     @InjectQueue(QUEUE_NAMES.BLOCKCHAIN_EVENTS)
     private readonly eventsQueue: Queue,
   ) {}
 
+  // ─── Lifecycle ─────────────────────────────────────────────────────────────
+
   async onApplicationBootstrap(): Promise<void> {
-    const enabledChains = this.config
+    const chains = this.config
       .get<string>('BLOCKCHAIN_LISTENER_CHAINS', 'POLYGON')
       .split(',')
       .map((c) => c.trim().toUpperCase());
 
-    for (const chain of enabledChains) {
-      await this.startListening(chain, 0);
+    for (const chain of chains) {
+      const isActive = await this.leader.tryAcquire(chain);
+      if (isActive) {
+        await this.becomeActive(chain);
+      } else {
+        this.becomeStandby(chain);
+      }
     }
   }
 
   async onApplicationShutdown(): Promise<void> {
-    for (const [chain, timer] of this.reconnectTimers) {
-      clearTimeout(timer);
-      this.reconnectTimers.delete(chain);
+    // Release all held leadership keys
+    for (const [chain, state] of this.leaderStates) {
+      if (state === 'active') {
+        await this.leader.release(chain).catch(() => {});
+      }
     }
-    for (const [chain, contract] of this.contracts) {
-      await contract.removeAllListeners();
-      this.contracts.delete(chain);
+
+    // Cancel all timers
+    for (const timer of this.renewalTimers.values())   clearInterval(timer);
+    for (const timer of this.standbyTimers.values())   clearInterval(timer);
+    for (const timer of this.reconnectTimers.values()) clearTimeout(timer);
+
+    this.renewalTimers.clear();
+    this.standbyTimers.clear();
+    this.reconnectTimers.clear();
+
+    // Tear down all active contracts/providers
+    for (const [, contract] of this.contracts) {
+      await contract.removeAllListeners().catch(() => {});
     }
-    for (const [chain, provider] of this.providers) {
+    for (const [, provider] of this.providers) {
       await (provider as ethers.AbstractProvider).destroy?.();
+    }
+    this.contracts.clear();
+    this.providers.clear();
+    this.leaderStates.clear();
+  }
+
+  // ─── Leader State Transitions ──────────────────────────────────────────────
+
+  private async becomeActive(chain: string): Promise<void> {
+    this.leaderStates.set(chain, 'active');
+    this.clearStandbyTimer(chain);
+    await this.startListening(chain, 0);
+    this.startRenewal(chain);
+  }
+
+  private becomeStandby(chain: string): void {
+    this.leaderStates.set(chain, 'standby');
+    this.clearRenewalTimer(chain);
+    this.teardownChain(chain);
+    this.startStandbyProbe(chain);
+  }
+
+  // ─── Renewal ───────────────────────────────────────────────────────────────
+
+  private startRenewal(chain: string): void {
+    this.clearRenewalTimer(chain);
+
+    const timer = setInterval(async () => {
+      const ok = await this.leader.renew(chain).catch(() => false);
+      if (!ok && this.leaderStates.get(chain) === 'active') {
+        this.becomeStandby(chain);
+      }
+    }, this.leader.renewIntervalMs);
+
+    this.renewalTimers.set(chain, timer);
+  }
+
+  private clearRenewalTimer(chain: string): void {
+    const t = this.renewalTimers.get(chain);
+    if (t) { clearInterval(t); this.renewalTimers.delete(chain); }
+  }
+
+  // ─── Standby Probe ─────────────────────────────────────────────────────────
+
+  private startStandbyProbe(chain: string): void {
+    this.clearStandbyTimer(chain);
+
+    const timer = setInterval(async () => {
+      if (this.leaderStates.get(chain) !== 'standby') return;
+
+      try {
+        const absent = await this.leader.isLeaderAbsent(chain);
+        if (!absent) return;
+
+        const acquired = await this.leader.tryAcquire(chain);
+        if (acquired) {
+          await this.becomeActive(chain);
+        }
+      } catch (err) {
+        this.logger.error(
+          `[${chain}] standby probe error: ${(err as Error).message}`,
+        );
+      }
+    }, this.leader.standbyProbeIntervalMs);
+
+    this.standbyTimers.set(chain, timer);
+  }
+
+  private clearStandbyTimer(chain: string): void {
+    const t = this.standbyTimers.get(chain);
+    if (t) { clearInterval(t); this.standbyTimers.delete(chain); }
+  }
+
+  // ─── Chain Teardown (demote to standby) ────────────────────────────────────
+
+  private teardownChain(chain: string): void {
+    const reconnect = this.reconnectTimers.get(chain);
+    if (reconnect) { clearTimeout(reconnect); this.reconnectTimers.delete(chain); }
+
+    const contract = this.contracts.get(chain);
+    if (contract) { contract.removeAllListeners().catch(() => {}); this.contracts.delete(chain); }
+
+    const provider = this.providers.get(chain);
+    if (provider) {
+      (provider as any).destroy?.();
       this.providers.delete(chain);
     }
   }
 
+  // ─── WS / HTTP Ingestion ───────────────────────────────────────────────────
+
   private async startListening(chain: string, attempt: number): Promise<void> {
-    const rpcEnvKey = RPC_ENV_KEYS[chain];
-    const rpcUrl = this.config.get<string>(rpcEnvKey ?? '');
+    if (this.leaderStates.get(chain) !== 'active') return;
+
+    const rpcUrl     = this.config.get<string>(RPC_ENV_KEYS[chain] ?? '');
     const usdcAddress = USDC_CONTRACTS[chain];
 
     if (!rpcUrl || !usdcAddress) {
-      this.logger.warn(`Skipping ${chain}: RPC URL or USDC address not configured`);
+      this.logger.warn(`[${chain}] Skipping: RPC URL or USDC address not configured`);
       return;
     }
 
     try {
-      // Prefer WebSocket for push-based events; fall back to HTTP + polling
       const provider = rpcUrl.startsWith('wss://')
         ? new ethers.WebSocketProvider(rpcUrl)
         : new ethers.JsonRpcProvider(rpcUrl);
 
-      const contract = new ethers.Contract(usdcAddress, ERC20_TRANSFER_ABI, provider);
-
-      // Get current block on connect — used to avoid replaying old events on reconnect
+      const contract    = new ethers.Contract(usdcAddress, ERC20_TRANSFER_ABI, provider);
       const currentBlock = await provider.getBlockNumber();
-      const fromBlock = Math.max(0, currentBlock - RECONNECT_LOOKBACK_BLOCKS);
+      const fromBlock    = Math.max(0, currentBlock - RECONNECT_LOOKBACK_BLOCKS);
 
-      // Subscribe to Transfer events
       contract.on('Transfer', async (from, to, value, event) => {
         await this.handleTransferEvent(chain, from, to, value, event);
       });
 
-      // Handle provider-level failures
       if (rpcUrl.startsWith('wss://')) {
         const ws = (provider as ethers.WebSocketProvider).websocket;
         (ws as any).on?.('error', (err: Error) => {
-          this.logger.error(`${chain} WebSocket error: ${err.message}`);
-          this.scheduleReconnect(chain, attempt);
+          this.logger.error(`[${chain}] WebSocket error: ${err.message}`);
+          if (this.leaderStates.get(chain) === 'active') {
+            this.teardownChain(chain);
+            this.scheduleReconnect(chain, attempt);
+          }
         });
         (ws as any).on?.('close', () => {
-          this.logger.warn(`${chain} WebSocket closed — reconnecting`);
-          this.scheduleReconnect(chain, attempt);
+          this.logger.warn(`[${chain}] WebSocket closed — reconnecting`);
+          if (this.leaderStates.get(chain) === 'active') {
+            this.teardownChain(chain);
+            this.scheduleReconnect(chain, attempt);
+          }
         });
       }
 
@@ -155,70 +270,65 @@ export class BlockchainListenerService
       this.contracts.set(chain, contract);
 
       this.logger.log(
-        `${chain} listener active on USDC ${usdcAddress} (from block ~${fromBlock})`,
+        `[${chain}] listener_active on USDC ${usdcAddress} (from block ~${fromBlock})`,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`${chain} listener failed to start (attempt ${attempt}): ${msg}`);
-      this.scheduleReconnect(chain, attempt);
+      this.logger.error(`[${chain}] listener failed to start (attempt ${attempt}): ${msg}`);
+      if (this.leaderStates.get(chain) === 'active') {
+        this.scheduleReconnect(chain, attempt);
+      }
     }
   }
 
+  private scheduleReconnect(chain: string, attempt: number): void {
+    const delay = Math.min(2_000 * 2 ** attempt, MAX_RECONNECT_DELAY_MS);
+    this.logger.log(`[${chain}] reconnect in ${delay}ms (attempt ${attempt + 1})`);
+
+    const timer = setTimeout(async () => {
+      this.reconnectTimers.delete(chain);
+      if (this.leaderStates.get(chain) === 'active') {
+        await this.startListening(chain, attempt + 1);
+      }
+    }, delay);
+
+    this.reconnectTimers.set(chain, timer);
+  }
+
+  // ─── Event Handler ─────────────────────────────────────────────────────────
+
   private async handleTransferEvent(
     chain: string,
-    from: string,
-    to: string,
+    from:  string,
+    to:    string,
     value: bigint,
     event: ethers.EventLog,
   ): Promise<void> {
-    const txHash = event.transactionHash;
-
-    // Deduplicate: use txHash + logIndex as jobId — BullMQ drops duplicates
-    const jobId = `transfer:${chain}:${txHash}:${event.index}`;
+    const jobId = `transfer:${chain}:${event.transactionHash}:${event.index}`;
 
     const payload: BlockchainTransferEvent = {
       chain,
-      txHash,
+      txHash:      event.transactionHash,
       blockNumber: event.blockNumber,
-      logIndex: event.index,
+      logIndex:    event.index,
       fromAddress: from.toLowerCase(),
-      toAddress: to.toLowerCase(),
-      amountRaw: value.toString(),
-      timestamp: Math.floor(Date.now() / 1000),
+      toAddress:   to.toLowerCase(),
+      amountRaw:   value.toString(),
+      timestamp:   Math.floor(Date.now() / 1000),
     };
 
     try {
       await this.eventsQueue.add('process_transfer', payload, {
         ...QUEUE_JOB_OPTIONS.blockchainEvents,
-        jobId, // idempotent — same event replayed on reconnect is deduplicated
+        jobId,
       });
 
       this.logger.debug(
-        `Queued Transfer: ${from} → ${to} ${value} USDC (${txHash.slice(0, 12)}...)`,
+        `[${chain}] Queued Transfer: ${from} → ${to} ${value} (${event.transactionHash.slice(0, 12)}...)`,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Failed to enqueue transfer event ${jobId}: ${msg}`);
-      // Do not rethrow — we don't want to crash the event listener
+      this.logger.error(`[${chain}] Failed to enqueue ${jobId}: ${msg}`);
     }
-  }
-
-  private scheduleReconnect(chain: string, attempt: number): void {
-    // Clear existing contract listener to avoid double-firing
-    this.contracts.get(chain)?.removeAllListeners().catch(() => {});
-    this.contracts.delete(chain);
-    (this.providers.get(chain) as any)?.destroy?.();
-    this.providers.delete(chain);
-
-    // Exponential backoff: 2s, 4s, 8s … cap at 60s
-    const delay = Math.min(2_000 * 2 ** attempt, MAX_RECONNECT_DELAY_MS);
-    this.logger.log(`${chain} reconnect in ${delay}ms (attempt ${attempt + 1})`);
-
-    const timer = setTimeout(async () => {
-      this.reconnectTimers.delete(chain);
-      await this.startListening(chain, attempt + 1);
-    }, delay);
-
-    this.reconnectTimers.set(chain, timer);
   }
 }
