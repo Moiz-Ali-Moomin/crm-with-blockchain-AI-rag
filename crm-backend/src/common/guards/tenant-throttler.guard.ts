@@ -60,10 +60,18 @@ export class TenantThrottlerGuard extends ThrottlerGuard {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const req = context.switchToHttp().getRequest<Request>();
+
+    // Health and metrics endpoints must never be throttled — Docker and Prometheus
+    // hit them frequently from internal IPs and share the Redis bucket across slots.
+    const path: string = req.path ?? '';
+    if (path.includes('/health/') || path.endsWith('/health') || path.includes('/metrics')) {
+      return true;
+    }
+
     const baseAllowed = await super.canActivate(context);
     if (!baseAllowed) return false;
 
-    const req = context.switchToHttp().getRequest<Request>();
     const res = context.switchToHttp().getResponse<Response>();
     const user = (req as any).user as { tenantId?: string; tier?: TenantTier } | undefined;
 
