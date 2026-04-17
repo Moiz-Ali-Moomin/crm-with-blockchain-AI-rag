@@ -325,34 +325,59 @@ export class BlockchainListenerService
 
   // ─── Event Handler ─────────────────────────────────────────────────────────
 
+  /**
+   * ethers v6: contract.on() passes ContractEventPayload as the last arg.
+   * Decoded args (from, to, value) come before it. The underlying Log lives
+   * at payload.log — NOT at the top level of the payload object.
+   */
   private async handleTransferEvent(
-    chain: string,
-    from:  string,
-    to:    string,
-    value: bigint,
-    event: ethers.EventLog,
+    chain:   string,
+    _from:   string,
+    _to:     string,
+    _value:  bigint,
+    payload: ethers.ContractEventPayload,
   ): Promise<void> {
-    const jobId = `transfer-${chain}-${event.transactionHash}-${event.index}`;
+    const log = payload?.log;
 
-    const payload: BlockchainTransferEvent = {
+    // ethers v6: args come from payload.args, with fallback to positional decoded args
+    const from  = (payload?.args?.from  ?? payload?.args?.[0] ?? _from)  as string;
+    const to    = (payload?.args?.to    ?? payload?.args?.[1] ?? _to)    as string;
+    const value = (payload?.args?.value ?? payload?.args?.[2] ?? _value) as bigint;
+
+    const txHash   = log?.transactionHash;
+    const logIndex = log?.index ?? 0;
+
+    if (!txHash) {
+      this.logger.error(`[${chain}] Missing txHash in Transfer event — skipping`, { args: payload?.args });
+      return;
+    }
+    if (!to || value === undefined) {
+      this.logger.warn(`[${chain}] Invalid Transfer event payload — skipping`, { txHash, to, value });
+      return;
+    }
+
+    const jobId = `transfer-${chain}-${txHash}-${logIndex}`;
+
+    const eventPayload: BlockchainTransferEvent = {
       chain,
-      txHash:      event.transactionHash,
-      blockNumber: event.blockNumber,
-      logIndex:    event.index,
-      fromAddress: from.toLowerCase(),
+      txHash,
+      blockNumber: log?.blockNumber ?? 0,
+      logIndex,
+      fromAddress: from?.toLowerCase?.() ?? '',
       toAddress:   to.toLowerCase(),
       amountRaw:   value.toString(),
       timestamp:   Math.floor(Date.now() / 1000),
     };
 
     try {
-      await this.eventsQueue.add('process_transfer', payload, {
+      await this.eventsQueue.add('process_transfer', eventPayload, {
         ...QUEUE_JOB_OPTIONS.blockchainEvents,
         jobId,
       });
 
       this.logger.debug(
-        `[${chain}] Queued Transfer: ${from} → ${to} ${value} (${event.transactionHash.slice(0, 12)}...)`,
+        `[${chain}] Transfer enqueued: ${from?.slice(0, 10)}… → ${to.slice(0, 10)}… ` +
+        `${value} raw (${txHash.slice(0, 12)}… log#${logIndex})`,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

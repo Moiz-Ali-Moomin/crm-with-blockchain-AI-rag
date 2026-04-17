@@ -235,17 +235,35 @@ export class PaymentListenerService
     }
   }
 
+  /**
+   * ethers v6: last arg is ContractEventPayload, not EventLog.
+   * Decoded args arrive before the payload; the underlying Log is at payload.log.
+   */
   private async onWsTransfer(
-    from:  string,
-    to:    string,
-    value: bigint,
-    event: ethers.EventLog,
+    _from:   string,
+    _to:     string,
+    _value:  bigint,
+    payload: ethers.ContractEventPayload,
   ): Promise<void> {
+    const log = payload?.log;
+
+    const from  = (payload?.args?.from  ?? payload?.args?.[0] ?? _from)  as string;
+    const to    = (payload?.args?.to    ?? payload?.args?.[1] ?? _to)    as string;
+    const value = (payload?.args?.value ?? payload?.args?.[2] ?? _value) as bigint;
+
+    const txHash   = log?.transactionHash;
+    const logIndex = log?.index ?? 0;
+
+    if (!txHash) {
+      this.logger.error(`[${this._chain}] Missing txHash in Transfer event — skipping`, { args: payload?.args });
+      return;
+    }
+
     await this.enqueueTransfer({
-      txHash:      event.transactionHash,
-      blockNumber: event.blockNumber,
-      logIndex:    event.index,
-      fromAddress: from.toLowerCase(),
+      txHash,
+      blockNumber: log?.blockNumber ?? 0,
+      logIndex,
+      fromAddress: from?.toLowerCase?.() ?? '',
       toAddress:   to.toLowerCase(),
       amountRaw:   value.toString(),
       chain:       this._chain,
