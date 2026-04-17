@@ -21,6 +21,7 @@ services:
       SLOT: blue
     networks:
       - crm_internal
+      - crm_public
     expose:
       - "3001"
     volumes:
