@@ -21,7 +21,7 @@ export class ReconciliationScheduler {
     };
 
     await this.reconciliationQueue.add('run_reconciliation', payload, {
-      jobId:            'reconciliation:singleton',
+      jobId:            'reconciliation-singleton',
       attempts:         1,
       removeOnComplete: true,
       removeOnFail:     false,

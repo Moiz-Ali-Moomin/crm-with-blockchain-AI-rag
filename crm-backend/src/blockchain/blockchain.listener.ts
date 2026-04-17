@@ -367,7 +367,7 @@ export class PaymentListenerService
   // ─── Queue Producer ────────────────────────────────────────────────────────
 
   private async enqueueTransfer(job: IncomingTransferJob): Promise<void> {
-    const jobId = `transfer:${job.txHash}:${job.logIndex}`;
+    const jobId = `transfer-${job.txHash}-${job.logIndex}`;
 
     try {
       await this.eventsQueue.add('process_transfer', job, {

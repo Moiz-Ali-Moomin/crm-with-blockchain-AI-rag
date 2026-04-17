@@ -34,7 +34,7 @@ export class PaymentAdapter implements PaymentPort {
       {
         ...QUEUE_JOB_OPTIONS.paymentProcessing,
         // BullMQ deduplication: same deal WON can only create one payment intent
-        jobId: `payment-intent:deal:${request.dealId}`,
+        jobId: `payment-intent-deal-${request.dealId}`,
       },
     );
 

@@ -128,5 +128,5 @@ export class WithdrawalWorker extends WorkerHost {
 /** Job options for enqueuing withdrawal jobs — re-export for producers. */
 export const withdrawalJobOptions = (idempotencyKey: string) => ({
   ...FINANCIAL_JOB_DEFAULTS,
-  jobId: `withdrawal:${idempotencyKey}`, // deduplicates duplicate enqueue calls
+  jobId: `withdrawal-${idempotencyKey}`, // deduplicates duplicate enqueue calls
 });

@@ -43,7 +43,7 @@ export class DomainEventBus {
     await this.emitter.emitAsync(event.eventType, event);
 
     const jobOpts = {
-      jobId: `auto:${event.eventId}`,
+      jobId: `auto-${event.eventId}`,
       attempts: QUEUE_JOB_OPTIONS.automation.attempts,
       backoff: QUEUE_JOB_OPTIONS.automation.backoff,
       removeOnComplete: QUEUE_JOB_OPTIONS.automation.removeOnComplete,
@@ -51,7 +51,7 @@ export class DomainEventBus {
     };
 
     const webhookOpts = {
-      jobId: `webhook:${event.eventId}`,
+      jobId: `webhook-${event.eventId}`,
       attempts: QUEUE_JOB_OPTIONS.webhook.attempts,
       backoff: QUEUE_JOB_OPTIONS.webhook.backoff,
       removeOnComplete: QUEUE_JOB_OPTIONS.webhook.removeOnComplete,

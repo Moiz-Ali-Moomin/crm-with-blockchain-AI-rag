@@ -69,7 +69,7 @@ export class DlqPublisherService {
     try {
       await this.dlqQueue.add('dlq_entry', entry, {
         // Dedup: if somehow the same exhausted job triggers this twice, only one lands
-        jobId:           `dlq:${job.queueName}:${job.id ?? job.name}`,
+        jobId:           `dlq-${job.queueName}-${job.id ?? job.name}`,
         removeOnComplete: true,
         removeOnFail:    false,
       });

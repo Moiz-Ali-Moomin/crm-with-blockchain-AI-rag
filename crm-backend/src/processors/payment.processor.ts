@@ -186,7 +186,7 @@ export class PaymentProcessor extends WorkerHost {
       },
       {
         ...QUEUE_JOB_OPTIONS.transactionConfirmation,
-        jobId: `confirm:${payment.id}`,
+        jobId: `confirm-${payment.id}`,
         delay: 15_000, // first check after 15 s — avoids hitting RPC before block is stable
       },
     );

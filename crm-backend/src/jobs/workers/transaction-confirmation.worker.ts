@@ -203,7 +203,7 @@ export class TransactionConfirmationWorker extends WorkerHost {
     // Replace the existing job by using the same jobId (BullMQ replaces queued jobs)
     await this.confirmationQueue.add('poll_confirmations', payload, {
       ...QUEUE_JOB_OPTIONS.transactionConfirmation,
-      jobId: `confirm:${payload.paymentId}`,
+      jobId: `confirm-${payload.paymentId}`,
       delay,
     });
   }

@@ -304,7 +304,7 @@ export class BlockchainListenerService
     value: bigint,
     event: ethers.EventLog,
   ): Promise<void> {
-    const jobId = `transfer:${chain}:${event.transactionHash}:${event.index}`;
+    const jobId = `transfer-${chain}-${event.transactionHash}-${event.index}`;
 
     const payload: BlockchainTransferEvent = {
       chain,

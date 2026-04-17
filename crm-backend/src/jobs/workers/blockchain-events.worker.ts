@@ -150,7 +150,7 @@ export class BlockchainEventsWorker extends WorkerHost {
       },
       {
         ...QUEUE_JOB_OPTIONS.transactionConfirmation,
-        jobId: `confirm:${payment.id}`,
+        jobId: `confirm-${payment.id}`,
         delay: 15_000, // First check after 15s (Polygon ~2s blocks, BASE ~2s)
       },
     );

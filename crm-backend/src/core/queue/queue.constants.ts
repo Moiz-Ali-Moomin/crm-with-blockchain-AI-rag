@@ -115,5 +115,5 @@ export const FINANCIAL_JOB_DEFAULTS = {
  */
 export const embeddingJobOptions = (entityType: string, entityId: string) => ({
   ...QUEUE_JOB_OPTIONS.aiEmbedding,
-  jobId: `embed:${entityType}:${entityId}`,
+  jobId: `embed-${entityType}-${entityId}`,
 });

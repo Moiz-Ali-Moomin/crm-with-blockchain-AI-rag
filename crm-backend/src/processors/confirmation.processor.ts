@@ -259,7 +259,7 @@ export class ConfirmationProcessor extends WorkerHost {
     // This prevents accumulating stale poll jobs for the same payment.
     await this.confirmationQueue.add('poll_confirmations', payload, {
       ...QUEUE_JOB_OPTIONS.transactionConfirmation,
-      jobId: `confirm:${payload.paymentId}`,
+      jobId: `confirm-${payload.paymentId}`,
       delay,
     });
   }

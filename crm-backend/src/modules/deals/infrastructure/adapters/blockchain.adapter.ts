@@ -46,7 +46,7 @@ export class BlockchainAdapter implements BlockchainPort {
       {
         ...QUEUE_JOB_OPTIONS.blockchain,
         // Idempotent job ID — BullMQ deduplicates concurrent enqueues for same deal
-        jobId: `blockchain:deal:${payload.entityId}`,
+        jobId: `blockchain-deal-${payload.entityId}`,
       },
     );
 
