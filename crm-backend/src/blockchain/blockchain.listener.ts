@@ -48,6 +48,8 @@ import { LeaderElectionService } from '../core/leader/leader-election.service';
 const SUBSCRIBE_LOOKBACK_BLOCKS  = 20;
 const DEFAULT_POLL_INTERVAL_MS   = 12_000;
 const MODE_WATCHDOG_INTERVAL_MS  = 30_000;
+const MAX_LOGS_CHUNK_BLOCKS      = 500;   // Polygon Amoy getLogs limit
+const RPC_RETRY_COUNT            = 3;
 
 export interface IncomingTransferJob {
   txHash:      string;
@@ -322,37 +324,85 @@ export class PaymentListenerService
   }
 
   private async pollNewBlocks(): Promise<void> {
-    const currentBlock = await this.provider.getBlockNumber();
+    const currentBlock = await this.withRetry(() => this.provider.getBlockNumber());
     if (currentBlock <= this._lastPolledBlock) return;
 
     const fromBlock = this._lastPolledBlock + 1;
     const toBlock   = currentBlock;
+    const filter    = this.usdc.buildInboundTransferFilter();
 
-    const filter = this.usdc.buildInboundTransferFilter();
-    const logs   = await this.provider.getLogs(filter, fromBlock, toBlock);
+    let totalLogs = 0;
+
+    // Chunk getLogs to stay within Polygon Amoy's block-range limit
+    for (let start = fromBlock; start <= toBlock; start += MAX_LOGS_CHUNK_BLOCKS) {
+      const end = Math.min(start + MAX_LOGS_CHUNK_BLOCKS - 1, toBlock);
+
+      let logs: Awaited<ReturnType<typeof this.provider.getLogs>>;
+      try {
+        logs = await this.withRetry(() => this.provider.getLogs(filter, start, end));
+      } catch (err) {
+        this.logger.error(
+          `[${this._chain}] PaymentListener: getLogs ${start}–${end} failed: ` +
+          `${(err as Error).message}`,
+        );
+        // Advance cursor to end of this chunk so we don't re-poll on the same failing range
+        this._lastPolledBlock = end;
+        continue;
+      }
+
+      for (const log of logs) {
+        const parsed = this.usdc.parseTransferEvent(log);
+        if (!parsed) continue;
+
+        await this.enqueueTransfer({
+          txHash:      parsed.txHash,
+          blockNumber: parsed.blockNumber,
+          logIndex:    parsed.logIndex,
+          fromAddress: parsed.from.toLowerCase(),
+          toAddress:   parsed.to.toLowerCase(),
+          amountRaw:   parsed.amountRaw,
+          chain:       this._chain,
+          timestamp:   Math.floor(Date.now() / 1000),
+        });
+        totalLogs++;
+      }
+
+      this._lastPolledBlock = end;
+    }
 
     this.logger.debug(
       `[${this._chain}] PaymentListener: polled blocks ${fromBlock}–${toBlock} — ` +
-      `${logs.length} Transfer log(s)`,
+      `${totalLogs} Transfer log(s)`,
     );
+  }
 
-    for (const log of logs) {
-      const parsed = this.usdc.parseTransferEvent(log);
-      if (!parsed) continue;
+  /**
+   * Retry wrapper for transient RPC errors (503, timeout, rate-limit).
+   * Throws on the final attempt or on non-retryable errors.
+   */
+  private async withRetry<T>(fn: () => Promise<T>, retries = RPC_RETRY_COUNT): Promise<T> {
+    let lastErr: unknown;
 
-      await this.enqueueTransfer({
-        txHash:      parsed.txHash,
-        blockNumber: parsed.blockNumber,
-        logIndex:    parsed.logIndex,
-        fromAddress: parsed.from.toLowerCase(),
-        toAddress:   parsed.to.toLowerCase(),
-        amountRaw:   parsed.amountRaw,
-        chain:       this._chain,
-        timestamp:   Math.floor(Date.now() / 1000),
-      });
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastErr = err;
+        const msg      = err instanceof Error ? err.message : String(err);
+        const retryable = /503|SERVER_ERROR|timeout|ETIMEDOUT|ECONNRESET|rate.limit/i.test(msg);
+
+        if (!retryable) throw err;
+
+        const delay = 1_000 * (attempt + 1);
+        this.logger.warn(
+          `[${this._chain}] PaymentListener: RPC transient error (attempt ${attempt + 1}/${retries}), ` +
+          `retrying in ${delay}ms: ${msg}`,
+        );
+        await new Promise<void>((r) => setTimeout(r, delay));
+      }
     }
 
-    this._lastPolledBlock = toBlock;
+    throw lastErr;
   }
 
   // ─── Mode Watchdog (WS ↔ HTTP) ────────────────────────────────────────────
