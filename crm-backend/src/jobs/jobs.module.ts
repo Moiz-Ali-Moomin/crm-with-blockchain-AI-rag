@@ -19,22 +19,24 @@ import { WebhookWorker } from './workers/webhook.worker';
 import { SmsWorker } from './workers/sms.worker';
 import { AiEmbeddingWorker } from './workers/ai-embedding.worker';
 import { BlockchainWorker } from './workers/blockchain.worker';
-// Financial rail
+// Financial rail workers (non-processor)
 import { PaymentProcessingWorker } from './workers/payment-processing.worker';
-import { BlockchainEventsWorker } from './workers/blockchain-events.worker';
-import { TransactionConfirmationWorker } from './workers/transaction-confirmation.worker';
 import { WithdrawalWorker } from './workers/withdrawal.worker';
 import { ReconciliationWorker } from './workers/reconciliation.worker';
 import { DlqWorker } from './workers/dlq.worker';
+// Shared services
 import { DlqPublisherService } from './services/dlq-publisher.service';
 import { ReconciliationScheduler } from './services/reconciliation.scheduler';
 import { AdminRetryController } from './controllers/admin-retry.controller';
+// Feature modules
 import { AutomationModule } from '../modules/automation/automation.module';
 import { AiModule } from '../modules/ai/ai.module';
 import { BlockchainModule } from '../modules/blockchain/blockchain.module';
 import { PaymentsModule } from '../modules/payments/payments.module';
 import { WalletsModule } from '../modules/wallets/wallets.module';
 import { DealsModule } from '../modules/deals/deals.module';
+// New processors module — replaces BlockchainEventsWorker + TransactionConfirmationWorker
+import { ProcessorsModule } from '../processors/processors.module';
 import { QUEUE_NAMES } from '../core/queue/queue.constants';
 import { DealWonSaga } from '../modules/deals/sagas/deal-won.saga';
 
@@ -62,6 +64,11 @@ import { DealWonSaga } from '../modules/deals/sagas/deal-won.saga';
     PaymentsModule,
     WalletsModule,
     DealsModule,
+    // ProcessorsModule owns PaymentProcessor + ConfirmationProcessor.
+    // These replace the legacy BlockchainEventsWorker and TransactionConfirmationWorker —
+    // both are removed from providers below to prevent duplicate @Processor registrations
+    // on the same queue.
+    ProcessorsModule,
   ],
   controllers: [AdminRetryController],
   providers: [
@@ -69,7 +76,7 @@ import { DealWonSaga } from '../modules/deals/sagas/deal-won.saga';
     DlqPublisherService,
     ReconciliationScheduler,
     DealWonSaga,
-    // Existing workers
+    // General workers
     EmailWorker,
     NotificationWorker,
     AutomationWorker,
@@ -78,9 +85,10 @@ import { DealWonSaga } from '../modules/deals/sagas/deal-won.saga';
     AiEmbeddingWorker,
     BlockchainWorker,
     // Financial rail workers
+    // NOTE: BlockchainEventsWorker and TransactionConfirmationWorker are intentionally
+    // omitted — they are superseded by PaymentProcessor and ConfirmationProcessor
+    // registered via ProcessorsModule above.
     PaymentProcessingWorker,
-    BlockchainEventsWorker,
-    TransactionConfirmationWorker,
     WithdrawalWorker,
     ReconciliationWorker,
     DlqWorker,

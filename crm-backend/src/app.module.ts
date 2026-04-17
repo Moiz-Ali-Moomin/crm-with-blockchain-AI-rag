@@ -11,7 +11,7 @@ import { Module, MiddlewareConsumer, NestModule, RequestMethod } from '@nestjs/c
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { ThrottlerStorageRedisService } from '@nestjs/throttler-storage-redis';
+import { RedisThrottlerStorage } from './common/rate-limit/redis-throttler.storage';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { ConfigModule } from '@nestjs/config';
@@ -44,6 +44,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AiModule } from './modules/ai/ai.module';
 import { BlockchainModule } from './modules/blockchain/blockchain.module';
+import { EthereumPaymentModule } from './blockchain/blockchain.module';
 import { WalletsModule } from './modules/wallets/wallets.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
@@ -124,7 +125,7 @@ import { TenantThrottlerGuard } from './common/guards/tenant-throttler.guard';
           { name: 'medium', ttl: 60_000,    limit: 200   },
           { name: 'long',   ttl: 3_600_000, limit: 1_000 },
         ],
-        storage: new ThrottlerStorageRedisService(
+        storage: new RedisThrottlerStorage(
           new Redis(config.get<string>('REDIS_URL', 'redis://localhost:6379'), {
             lazyConnect: false,
             maxRetriesPerRequest: 3,
@@ -160,6 +161,12 @@ import { TenantThrottlerGuard } from './common/guards/tenant-throttler.guard';
     AnalyticsModule,
     AiModule,
     BlockchainModule,
+
+    // ── USDC Payment Rail (ethers.js provider + listener + USDC helper) ──────
+    // Must be imported before JobsModule so the listener boots before workers.
+    // EthereumPaymentModule provides: EthereumProviderService, UsdcContractService,
+    // PaymentListenerService (starts on onApplicationBootstrap).
+    EthereumPaymentModule,
 
     // ── Financial Rail ───────────────────────────────────────────────────────
     WalletsModule,
