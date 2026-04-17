@@ -24,7 +24,7 @@ import {
   HttpStatus,
   Inject,
 } from '@nestjs/common';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerGuard, InjectThrottlerOptions, InjectThrottlerStorage } from '@nestjs/throttler';
 import { Reflector } from '@nestjs/core';
 import { Request, Response } from 'express';
 import { SlidingWindowRateLimiter } from '../rate-limit/sliding-window.service';
@@ -41,8 +41,8 @@ const TIER_LIMITS: Record<TenantTier, { rpm: number }> = {
 @Injectable()
 export class TenantThrottlerGuard extends ThrottlerGuard {
   constructor(
-    @Inject('THROTTLER:MODULE_OPTIONS') options: any,
-    @Inject('THROTTLER_STORAGE') storage: any,
+    @InjectThrottlerOptions() options: any,
+    @InjectThrottlerStorage() storage: any,
     reflector: Reflector,
     private readonly slidingWindow: SlidingWindowRateLimiter,
   ) {
