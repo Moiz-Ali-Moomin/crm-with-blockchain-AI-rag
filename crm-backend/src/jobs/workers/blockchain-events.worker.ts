@@ -94,11 +94,10 @@ export class BlockchainEventsWorker extends WorkerHost {
 
     // 2. Record the blockchain transaction
     await this.prisma.blockchainTransaction.upsert({
-      where: { txHash: event.txHash },
+      where: { txHash_logIndex: { txHash: event.txHash, logIndex: event.logIndex } },
       create: {
-        tenantId: payment.tenantId,
-        paymentId: payment.id,
         txHash: event.txHash,
+        logIndex: event.logIndex,
         chain: event.chain as Chain,
         status: 'SUBMITTED',
         fromAddress: event.fromAddress,
@@ -106,6 +105,8 @@ export class BlockchainEventsWorker extends WorkerHost {
         amountRaw: event.amountRaw,
         blockNumber: BigInt(event.blockNumber),
         firstSeenAt: new Date(),
+        tenant: { connect: { id: payment.tenantId } },
+        payment: { connect: { id: payment.id } },
       },
       update: {
         // Idempotent — if we've already seen this tx, don't overwrite confirmed data
