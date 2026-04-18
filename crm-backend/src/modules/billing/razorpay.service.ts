@@ -36,12 +36,12 @@ const RAZORPAY_PLAN_ID_MAP: Record<string, string | undefined> = {
   enterprise: process.env.RAZORPAY_PLAN_ENTERPRISE,
 };
 
-// INR prices (paise = ₹ × 100). Annual = 20% discount.
+// INR prices in paise (₹ × 100) — must match amounts set in Razorpay dashboard plans.
 const PLAN_INR_MONTHLY: Record<string, number> = {
-  starter:    4900_00,   // ₹4,900 / mo
-  pro:        9900_00,
-  pro_plus:   14900_00,
-  ultimate:   49900_00,
+  starter:    49_00,      // ₹49   / mo
+  pro:        1500_00,    // ₹1,500 / mo
+  pro_plus:   2500_00,    // ₹2,500 / mo
+  ultimate:   4500_00,    // ₹4,500 / mo
   enterprise: 0,
 };
 
@@ -163,12 +163,24 @@ export class RazorpayService {
   async cancelSubscription(tenantId: string) {
     const billing = await this.billingRepo.findByTenantId(tenantId);
     const subId = (billing as any)?.razorpaySubscriptionId as string | null;
-    if (!subId) throw new BusinessRuleError('No active Razorpay subscription found');
+    const hasRazorpayPayment =
+      subId ||
+      (billing as any)?.razorpayPaymentId ||
+      (billing as any)?.razorpayOrderId;
 
-    await (this.rz.subscriptions as any).cancel(subId);
+    if (!hasRazorpayPayment) {
+      throw new BusinessRuleError('No active Razorpay payment found');
+    }
+
+    // Only call Razorpay API if there is an actual recurring subscription
+    if (subId) {
+      await (this.rz.subscriptions as any).cancel(subId);
+    }
 
     await this.billingRepo.update(tenantId, {
       razorpaySubscriptionId: null,
+      razorpayPaymentId:      null,
+      razorpayOrderId:        null,
       plan:              'FREE',
       status:            'CANCELLED',
       cancelAtPeriodEnd: false,
