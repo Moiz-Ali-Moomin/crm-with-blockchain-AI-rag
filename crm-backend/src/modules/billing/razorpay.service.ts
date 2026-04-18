@@ -49,15 +49,20 @@ const PLAN_INR_MONTHLY: Record<string, number> = {
 export class RazorpayService {
   private readonly logger = new Logger(RazorpayService.name);
 
-  private readonly rz: Razorpay;
+  private _rz: Razorpay | null = null;
 
-  constructor(private readonly billingRepo: BillingRepository) {
-    const keyId     = process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    if (!keyId || !keySecret) {
-      throw new Error('RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET must be set');
+  constructor(private readonly billingRepo: BillingRepository) {}
+
+  private get rz(): Razorpay {
+    if (!this._rz) {
+      const keyId     = process.env.RAZORPAY_KEY_ID;
+      const keySecret = process.env.RAZORPAY_KEY_SECRET;
+      if (!keyId || !keySecret) {
+        throw new ExternalServiceError('Razorpay - RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET must be set');
+      }
+      this._rz = new Razorpay({ key_id: keyId, key_secret: keySecret });
     }
-    this.rz = new Razorpay({ key_id: keyId, key_secret: keySecret });
+    return this._rz;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
