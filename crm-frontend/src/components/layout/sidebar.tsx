@@ -93,7 +93,7 @@ export function Sidebar({ open, onToggle }: SidebarProps) {
       variants={sidebarVariants}
       animate={open ? 'open' : 'closed'}
       initial={false}
-      className="relative flex flex-col bg-white border-r border-gray-200 shrink-0 overflow-visible"
+      className="relative flex flex-col bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 shrink-0 overflow-visible"
       style={{ willChange: 'width' }}
     >
       {/* Logo */}

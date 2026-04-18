@@ -44,6 +44,11 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 
+  .dark body {
+    background: #030712;
+    color: #f9fafb;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold tracking-tight;
   }

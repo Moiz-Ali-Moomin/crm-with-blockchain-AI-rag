@@ -16,13 +16,27 @@
  *   - Pipelines, Users: 10min (rarely change)
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toaster } from 'sonner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { SocketProvider } from '@/hooks/use-socket-singleton';
 import { observe } from '@/lib/observability';
+import { useThemeStore } from '@/store/theme.store';
+
+function ThemeApplicator() {
+  const theme = useThemeStore((s) => s.theme);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+  }, [theme]);
+  return null;
+}
 
 function makeQueryClient(): QueryClient {
   return new QueryClient({
@@ -48,6 +62,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <ErrorBoundary context="Application Root">
+      <ThemeApplicator />
       <SocketProvider>
         <QueryClientProvider client={queryClient}>
           {children}

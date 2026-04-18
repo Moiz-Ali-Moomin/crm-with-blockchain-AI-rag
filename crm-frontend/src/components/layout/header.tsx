@@ -7,7 +7,9 @@ import {
   Bell, ChevronDown, Settings, LogOut, User,
   Search, Command, Plus, ChevronRight,
   Users, UserCircle, TrendingUp, Building2, Ticket,
+  Sun, Moon,
 } from 'lucide-react';
+import { useThemeStore } from '@/store/theme.store';
 import { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '@/store/auth.store';
 import { notificationsApi } from '@/lib/api/notifications.api';
@@ -161,6 +163,7 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
   const logout   = useAuthStore((s) => s.logout);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const { theme, toggleTheme } = useThemeStore();
 
   const { data: unreadData } = useQuery({
     queryKey: queryKeys.notifications.unreadCount(user?.id ?? ''),
@@ -185,7 +188,7 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
   };
 
   return (
-    <header className="bg-white border-b border-gray-200 h-14 flex items-center justify-between px-5 shrink-0 sticky top-0 z-30">
+    <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 h-14 flex items-center justify-between px-5 shrink-0 sticky top-0 z-30">
       {/* Left: hamburger + breadcrumb */}
       <div className="flex items-center gap-3">
         <button
@@ -235,6 +238,19 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
 
         {/* New dropdown */}
         <NewDropdown />
+
+        {/* Theme toggle */}
+        <button
+          onClick={toggleTheme}
+          className={cn(
+            'w-8 h-8 rounded-md flex items-center justify-center transition-all duration-150',
+            'text-gray-400 hover:text-gray-600 hover:bg-gray-100',
+            'dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800',
+          )}
+          aria-label="Toggle theme"
+        >
+          {theme === 'dark' ? <Sun size={15} strokeWidth={1.8} /> : <Moon size={15} strokeWidth={1.8} />}
+        </button>
 
         {/* Notifications */}
         <button

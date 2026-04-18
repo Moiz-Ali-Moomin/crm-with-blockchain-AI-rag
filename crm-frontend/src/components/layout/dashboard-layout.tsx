@@ -26,7 +26,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-950">
       <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen((o) => !o)} />
 
       <div className="relative flex flex-col flex-1 min-w-0 overflow-hidden">

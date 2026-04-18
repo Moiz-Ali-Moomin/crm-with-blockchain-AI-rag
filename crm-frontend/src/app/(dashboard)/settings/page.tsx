@@ -6,16 +6,19 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Sun, Moon } from 'lucide-react';
 import { usersApi } from '@/lib/api/users.api';
 import { useAuthStore } from '@/store/auth.store';
+import { useThemeStore } from '@/store/theme.store';
 import { queryKeys } from '@/lib/query/query-keys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import BillingPage from './billing/page';
+import { cn } from '@/lib/utils';
 
-const TABS = ['Profile', 'Security', 'Billing'] as const;
+const TABS = ['Profile', 'Security', 'Appearance', 'Billing'] as const;
 type Tab = (typeof TABS)[number];
 
 const profileSchema = z.object({
@@ -104,21 +107,93 @@ function SecurityTab() {
   );
 }
 
+function AppearanceTab() {
+  const { theme, setTheme } = useThemeStore();
+
+  return (
+    <div className="space-y-6 max-w-md">
+      <div>
+        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">Theme</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Choose how the dashboard looks to you.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => setTheme('light')}
+            className={cn(
+              'flex flex-col items-center gap-3 p-4 rounded-xl border-2 transition-all',
+              theme === 'light'
+                ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
+                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600',
+            )}
+          >
+            <div className="w-12 h-12 rounded-xl bg-white border border-gray-200 flex items-center justify-center shadow-sm">
+              <Sun size={22} className="text-amber-500" />
+            </div>
+            <div className="text-center">
+              <p className={cn('text-sm font-semibold', theme === 'light' ? 'text-blue-600' : 'text-gray-700 dark:text-gray-200')}>Light</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">Clean white theme</p>
+            </div>
+            {theme === 'light' && (
+              <span className="text-[10px] font-semibold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">Active</span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setTheme('dark')}
+            className={cn(
+              'flex flex-col items-center gap-3 p-4 rounded-xl border-2 transition-all',
+              theme === 'dark'
+                ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
+                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600',
+            )}
+          >
+            <div className="w-12 h-12 rounded-xl bg-gray-900 border border-gray-700 flex items-center justify-center shadow-sm">
+              <Moon size={22} className="text-blue-400" />
+            </div>
+            <div className="text-center">
+              <p className={cn('text-sm font-semibold', theme === 'dark' ? 'text-blue-600' : 'text-gray-700 dark:text-gray-200')}>Dark</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">Easy on the eyes</p>
+            </div>
+            {theme === 'dark' && (
+              <span className="text-[10px] font-semibold text-blue-600 bg-blue-100 dark:bg-blue-900 dark:text-blue-400 px-2 py-0.5 rounded-full">Active</span>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('Profile');
 
   return (
     <div className="space-y-4 max-w-4xl">
-      <div className="border-b border-slate-200 dark:border-slate-700">
+      <div className="border-b border-gray-200 dark:border-gray-800">
         <div className="flex">
           {TABS.map((t) => (
-            <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === t ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{t}</button>
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn(
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
+                tab === t
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200',
+              )}
+            >
+              {t}
+            </button>
           ))}
         </div>
       </div>
 
       {tab === 'Billing' ? (
         <BillingPage />
+      ) : tab === 'Appearance' ? (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Appearance</CardTitle></CardHeader>
+          <CardContent><AppearanceTab /></CardContent>
+        </Card>
       ) : (
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm">{tab}</CardTitle></CardHeader>
