@@ -826,22 +826,26 @@ model Integration {
 // ============================================================
 
 model BillingInfo {
-  id                   String    @id @default(uuid())
-  tenantId             String    @unique
-  stripeCustomerId     String?   @unique
-  stripeSubscriptionId String?   @unique
-  paypalSubscriptionId String?   @unique
-  plan                 String    @default("free")
-  status               String    @default("active")  // active | past_due | canceled | trialing
-  currentPeriodStart   DateTime?
-  currentPeriodEnd     DateTime?
-  cancelAtPeriodEnd    Boolean   @default(false)
-  metadata             Json      @default("{}")
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                      String    @id @default(uuid())
+  tenantId                String    @unique
+  stripeCustomerId        String?   @unique
+  stripeSubscriptionId    String?   @unique
+  paypalSubscriptionId    String?   @unique
+  razorpayCustomerId      String?   @unique
+  razorpaySubscriptionId  String?   @unique
+  razorpayPaymentId       String?
+  razorpayOrderId         String?
+  plan                    String    @default("free")
+  status                  String    @default("active")  // active | past_due | canceled | trialing
+  currentPeriodStart      DateTime?
+  currentPeriodEnd        DateTime?
+  cancelAtPeriodEnd       Boolean   @default(false)
+  metadata                Json      @default("{}")
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   // Relations
-  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("billing_info")
 }

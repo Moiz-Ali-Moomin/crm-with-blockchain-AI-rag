@@ -7,6 +7,7 @@
 
 import {
   Controller,
+  Delete,
   Get,
   Post,
   Patch,
@@ -19,6 +20,7 @@ import {
 import { Request } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiExcludeEndpoint } from '@nestjs/swagger';
 import { BillingService } from './billing.service';
+import { RazorpayService } from './razorpay.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -41,6 +43,14 @@ import {
   ConfirmCryptoPaymentDto,
   RefundStripeChargeSchema,
   RefundStripeChargeDto,
+  CreateRazorpaySubscriptionSchema,
+  CreateRazorpaySubscriptionDto,
+  VerifyRazorpayPaymentSchema,
+  VerifyRazorpayPaymentDto,
+  CreateRazorpayOrderSchema,
+  CreateRazorpayOrderDto,
+  VerifyRazorpayOrderSchema,
+  VerifyRazorpayOrderDto,
 } from './billing.dto';
 
 @ApiTags('billing')
@@ -48,7 +58,10 @@ import {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('billing')
 export class BillingController {
-  constructor(private readonly service: BillingService) {}
+  constructor(
+    private readonly service: BillingService,
+    private readonly razorpayService: RazorpayService,
+  ) {}
 
   // ── Info & Plans ───────────────────────────────────────────────────────────
 
@@ -217,5 +230,79 @@ export class BillingController {
     @Body(new ZodValidationPipe(ConfirmCryptoPaymentSchema)) dto: ConfirmCryptoPaymentDto,
   ) {
     return this.service.adminConfirmCryptoPayment(dto);
+  }
+
+  // ── Razorpay ───────────────────────────────────────────────────────────────
+
+  /**
+   * Step 1: Create a Razorpay Subscription.
+   * Returns { subscriptionId, keyId } — frontend passes these to Razorpay Checkout SDK.
+   * Supports UPI AutoPay, cards, netbanking recurring mandates.
+   */
+  @Post('razorpay/subscribe')
+  @ApiOperation({ summary: 'Create a Razorpay subscription (UPI AutoPay / card recurring)' })
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  createRazorpaySubscription(
+    @CurrentUser() user: JwtUser,
+    @Body(new ZodValidationPipe(CreateRazorpaySubscriptionSchema)) dto: CreateRazorpaySubscriptionDto,
+  ) {
+    return this.razorpayService.createSubscription(user.tenantId, dto);
+  }
+
+  /**
+   * Step 2: Verify Razorpay subscription payment after checkout completes.
+   * Frontend calls this with the three values returned by Razorpay Checkout SDK.
+   */
+  @Post('razorpay/verify')
+  @ApiOperation({ summary: 'Verify Razorpay subscription payment signature' })
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  verifyRazorpayPayment(
+    @CurrentUser() user: JwtUser,
+    @Body(new ZodValidationPipe(VerifyRazorpayPaymentSchema)) dto: VerifyRazorpayPaymentDto,
+  ) {
+    return this.razorpayService.verifySubscriptionPayment(user.tenantId, dto);
+  }
+
+  /**
+   * Create a Razorpay Order for a one-time payment (fallback / top-up).
+   * Returns { orderId, amount, currency, keyId }.
+   */
+  @Post('razorpay/order')
+  @ApiOperation({ summary: 'Create a Razorpay one-time order' })
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  createRazorpayOrder(
+    @CurrentUser() user: JwtUser,
+    @Body(new ZodValidationPipe(CreateRazorpayOrderSchema)) dto: CreateRazorpayOrderDto,
+  ) {
+    return this.razorpayService.createOrder(user.tenantId, dto);
+  }
+
+  /** Verify a one-time Razorpay order payment signature */
+  @Post('razorpay/verify-order')
+  @ApiOperation({ summary: 'Verify Razorpay one-time order payment signature' })
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  verifyRazorpayOrder(
+    @CurrentUser() user: JwtUser,
+    @Body(new ZodValidationPipe(VerifyRazorpayOrderSchema)) dto: VerifyRazorpayOrderDto,
+  ) {
+    return this.razorpayService.verifyOrderPayment(user.tenantId, dto);
+  }
+
+  @Delete('razorpay/cancel')
+  @ApiOperation({ summary: 'Cancel the active Razorpay subscription' })
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  cancelRazorpaySubscription(@CurrentUser() user: JwtUser) {
+    return this.razorpayService.cancelSubscription(user.tenantId);
+  }
+
+  @Post('razorpay/webhook')
+  @Public()
+  @ApiExcludeEndpoint()
+  async handleRazorpayWebhook(
+    @Headers('x-razorpay-signature') signature: string,
+    @Req() req: RawBodyRequest<Request>,
+  ) {
+    const rawBody = req.rawBody?.toString('utf-8') ?? '';
+    return this.razorpayService.handleWebhook(rawBody, signature);
   }
 }

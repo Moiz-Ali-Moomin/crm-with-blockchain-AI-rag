@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './client';
+import { apiGet, apiPost, apiDelete } from './client';
 
 export interface Plan {
   id: string;
@@ -15,6 +15,10 @@ export interface BillingInfo {
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
   paypalSubscriptionId: string | null;
+  razorpayCustomerId: string | null;
+  razorpaySubscriptionId: string | null;
+  razorpayPaymentId: string | null;
+  razorpayOrderId: string | null;
   plan: string;
   status: string;
   currentPeriodStart: string | null;
@@ -91,4 +95,46 @@ export const billingApi = {
     currency: 'ETH' | 'USDC' | 'USDT' | 'DAI';
     billingCycle: 'monthly' | 'annual';
   }) => apiPost<CryptoPayment>('/billing/crypto/create', data),
+
+  // ── Razorpay ──────────────────────────────────────────────────────────────
+
+  createRazorpaySubscription: (data: {
+    planId: string;
+    billingCycle: 'monthly' | 'annual';
+  }) => apiPost<RazorpaySubscriptionResult>('/billing/razorpay/subscribe', data),
+
+  verifyRazorpayPayment: (data: {
+    razorpay_payment_id: string;
+    razorpay_subscription_id: string;
+    razorpay_signature: string;
+  }) => apiPost<{ success: boolean; plan: string }>('/billing/razorpay/verify', data),
+
+  createRazorpayOrder: (data: {
+    planId: string;
+    billingCycle: 'monthly' | 'annual';
+  }) => apiPost<RazorpayOrderResult>('/billing/razorpay/order', data),
+
+  verifyRazorpayOrder: (data: {
+    razorpay_payment_id: string;
+    razorpay_order_id: string;
+    razorpay_signature: string;
+    planId: string;
+    billingCycle: 'monthly' | 'annual';
+  }) => apiPost<{ success: boolean; plan: string }>('/billing/razorpay/verify-order', data),
+
+  cancelRazorpaySubscription: () =>
+    apiDelete<{ message: string }>('/billing/razorpay/cancel'),
 };
+
+export interface RazorpaySubscriptionResult {
+  subscriptionId: string;
+  status: string;
+  keyId: string;
+}
+
+export interface RazorpayOrderResult {
+  orderId: string;
+  amount: number;
+  currency: string;
+  keyId: string;
+}

@@ -31,10 +31,18 @@ export class BillingRepository {
     return this.prisma.billingInfo.findUnique({ where: { paypalSubscriptionId } as any });
   }
 
+  async findByRazorpaySubscriptionId(razorpaySubscriptionId: string) {
+    return this.prisma.billingInfo.findUnique({ where: { razorpaySubscriptionId } as any });
+  }
+
   async update(tenantId: string, data: {
     stripeCustomerId?: string;
     stripeSubscriptionId?: string | null;
     paypalSubscriptionId?: string | null;
+    razorpayCustomerId?: string | null;
+    razorpaySubscriptionId?: string | null;
+    razorpayPaymentId?: string | null;
+    razorpayOrderId?: string | null;
     plan?: string;
     status?: string;
     currentPeriodEnd?: Date | null;
@@ -51,6 +59,10 @@ export class BillingRepository {
     stripeCustomerId?: string;
     stripeSubscriptionId?: string | null;
     paypalSubscriptionId?: string | null;
+    razorpayCustomerId?: string | null;
+    razorpaySubscriptionId?: string | null;
+    razorpayPaymentId?: string | null;
+    razorpayOrderId?: string | null;
     plan?: string;
     status?: string;
     currentPeriodEnd?: Date | null;

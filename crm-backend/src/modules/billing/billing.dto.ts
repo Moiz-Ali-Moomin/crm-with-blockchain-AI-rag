@@ -57,3 +57,38 @@ export const RefundStripeChargeSchema = z.object({
   amountCents: z.number().int().positive().optional(),
 });
 export type RefundStripeChargeDto = z.infer<typeof RefundStripeChargeSchema>;
+
+// ── Razorpay ─────────────────────────────────────────────────────────────────
+
+/** Step 1: Create a Razorpay subscription and get the subscription_id for checkout */
+export const CreateRazorpaySubscriptionSchema = z.object({
+  planId: z.enum(PAID_PLANS),
+  /** INR amount in paise for display (e.g. 4900 = ₹49). Backend derives from planId. */
+  billingCycle: z.enum(['monthly', 'annual']).default('monthly'),
+});
+export type CreateRazorpaySubscriptionDto = z.infer<typeof CreateRazorpaySubscriptionSchema>;
+
+/** Step 2: Verify Razorpay payment signature after checkout completes */
+export const VerifyRazorpayPaymentSchema = z.object({
+  razorpay_payment_id:    z.string().min(1),
+  razorpay_subscription_id: z.string().min(1),
+  razorpay_signature:     z.string().min(1),
+});
+export type VerifyRazorpayPaymentDto = z.infer<typeof VerifyRazorpayPaymentSchema>;
+
+/** One-time Razorpay order (for non-subscription flows) */
+export const CreateRazorpayOrderSchema = z.object({
+  planId: z.enum(PAID_PLANS),
+  billingCycle: z.enum(['monthly', 'annual']).default('monthly'),
+});
+export type CreateRazorpayOrderDto = z.infer<typeof CreateRazorpayOrderSchema>;
+
+/** Verify a one-time Razorpay order payment */
+export const VerifyRazorpayOrderSchema = z.object({
+  razorpay_payment_id: z.string().min(1),
+  razorpay_order_id:   z.string().min(1),
+  razorpay_signature:  z.string().min(1),
+  planId:              z.enum(PAID_PLANS),
+  billingCycle:        z.enum(['monthly', 'annual']).default('monthly'),
+});
+export type VerifyRazorpayOrderDto = z.infer<typeof VerifyRazorpayOrderSchema>;
