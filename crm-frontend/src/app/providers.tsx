@@ -24,6 +24,8 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { SocketProvider } from '@/hooks/use-socket-singleton';
 import { observe } from '@/lib/observability';
 import { useThemeStore } from '@/store/theme.store';
+import { useAuthStore } from '@/store/auth.store';
+import { apiClient } from '@/lib/api/client';
 
 function ThemeApplicator() {
   const theme = useThemeStore((s) => s.theme);
@@ -35,6 +37,27 @@ function ThemeApplicator() {
       root.classList.remove('dark');
     }
   }, [theme]);
+  return null;
+}
+
+// On mount, if localStorage says the user is authenticated but the in-memory
+// accessToken is gone (page reload), silently use the refresh-token cookie to
+// get a new access token. This keeps the user logged in across full reloads.
+function AuthRehydrator() {
+  useEffect(() => {
+    const { isAuthenticated, accessToken, setAccessToken, logout } =
+      useAuthStore.getState();
+    if (isAuthenticated && !accessToken) {
+      apiClient
+        .post('/auth/refresh')
+        .then((res) => {
+          const newToken: string = res.data?.data?.accessToken;
+          if (newToken) setAccessToken(newToken);
+          else logout();
+        })
+        .catch(() => logout());
+    }
+  }, []);
   return null;
 }
 
@@ -63,6 +86,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ErrorBoundary context="Application Root">
       <ThemeApplicator />
+      <AuthRehydrator />
       <SocketProvider>
         <QueryClientProvider client={queryClient}>
           {children}

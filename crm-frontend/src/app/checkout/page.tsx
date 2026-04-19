@@ -182,6 +182,7 @@ function CheckoutContent() {
   const planId = searchParams.get('plan') ?? '';
   const billingCycle = searchParams.get('billing') === 'annual' ? 'annual' : 'monthly';
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const _hasHydrated = useAuthStore((s) => s._hasHydrated);
 
   const [currency, setCurrency] = useState<Currency>('INR');
   const [loading, setLoading] = useState<LoadingKey>(null);
@@ -189,10 +190,17 @@ function CheckoutContent() {
   const [razorpayLoaded, setRazorpayLoaded] = useState(false);
 
   useEffect(() => {
+    // Wait for Zustand to rehydrate from localStorage before checking auth.
+    // Without this guard, the first render (isAuthenticated=false) triggers a
+    // spurious redirect to /login even for legitimately logged-in users.
+    if (!_hasHydrated) return;
     if (!isAuthenticated) {
       router.replace(`/login?redirect=${encodeURIComponent(`/checkout?plan=${planId}&billing=${billingCycle}`)}`);
     }
-  }, [isAuthenticated, planId, billingCycle, router]);
+  }, [_hasHydrated, isAuthenticated, planId, billingCycle, router]);
+
+  // Show nothing while Zustand is still rehydrating from localStorage.
+  if (!_hasHydrated) return null;
 
   const plan = PLAN_META[planId];
   if (!plan) {

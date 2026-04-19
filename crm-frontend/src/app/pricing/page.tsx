@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Check, Minus, Zap, ArrowRight, Phone } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/store/auth.store';
 
 // ── Plan definitions ──────────────────────────────────────────────────────────
 
@@ -217,6 +218,7 @@ export default function PricingPage() {
   const router = useRouter();
   const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly');
   const annual = billing === 'annual';
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   function handleCta(plan: (typeof PLANS)[number]) {
     if (plan.ctaHref) { router.push(plan.ctaHref); return; }
@@ -240,15 +242,26 @@ export default function PricingPage() {
             <Link href="/pricing" className="text-blue-600 font-medium">Pricing</Link>
           </nav>
           <div className="flex items-center gap-2">
-            <Link href="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900 px-3 py-1.5 transition-colors">
-              Log in
-            </Link>
-            <Link
-              href="/register"
-              className="text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-            >
-              Get started
-            </Link>
+            {isAuthenticated ? (
+              <Link
+                href="/dashboard"
+                className="text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                Go to Dashboard
+              </Link>
+            ) : (
+              <>
+                <Link href="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900 px-3 py-1.5 transition-colors">
+                  Log in
+                </Link>
+                <Link
+                  href="/register"
+                  className="text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  Get started
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -568,11 +581,18 @@ export default function PricingPage() {
               <span key={item}>{item}</span>
             ))}
           </div>
-          <p className="text-center text-xs text-slate-400 mt-6">
-            Already have an account?{' '}
-            <Link href="/login" className="text-blue-600 hover:underline">Sign in</Link>
-            {' '}to manage your subscription from Settings &rarr; Billing.
-          </p>
+          {isAuthenticated ? (
+            <p className="text-center text-xs text-slate-400 mt-6">
+              Manage your subscription from{' '}
+              <Link href="/settings/billing" className="text-blue-600 hover:underline">Settings → Billing</Link>.
+            </p>
+          ) : (
+            <p className="text-center text-xs text-slate-400 mt-6">
+              Already have an account?{' '}
+              <Link href="/login" className="text-blue-600 hover:underline">Sign in</Link>
+              {' '}to manage your subscription from Settings &rarr; Billing.
+            </p>
+          )}
         </div>
       </div>
 
