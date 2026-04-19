@@ -48,8 +48,8 @@ export default function ForgotPasswordPage() {
         {sent ? (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <CheckCircle size={40} className="text-green-500" />
-            <p className="font-medium text-slate-900">Check your email</p>
-            <p className="text-sm text-slate-500">
+            <p className="font-medium text-fg">Check your email</p>
+            <p className="text-sm text-fg-muted">
               We&apos;ve sent a password reset link to your email address.
             </p>
             <Link href="/login" className="text-blue-600 hover:underline text-sm mt-2">
@@ -75,7 +75,7 @@ export default function ForgotPasswordPage() {
               Send Reset Link
             </Button>
 
-            <p className="text-center text-sm text-slate-500">
+            <p className="text-center text-sm text-fg-muted">
               <Link href="/login" className="text-blue-600 hover:underline">
                 Back to login
               </Link>

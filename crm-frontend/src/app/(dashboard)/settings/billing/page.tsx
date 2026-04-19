@@ -388,7 +388,7 @@ function PlanCard({ plan, currentPlanId, currency, onSelect }: {
     <div className={cn(
       'relative rounded-xl border p-5 flex flex-col gap-4 transition-all',
       isCurrent
-        ? 'border-blue-500 bg-blue-50 shadow-sm'
+        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-sm'
         : isHighlighted
           ? 'border-blue-300 bg-canvas hover:border-blue-400 hover:shadow-sm'
           : 'border-ui-border bg-canvas hover:border-ui-border hover:shadow-sm',
@@ -443,7 +443,7 @@ function PlanCard({ plan, currentPlanId, currency, onSelect }: {
         className={cn(
           'w-full',
           isCurrent
-            ? 'bg-blue-100 text-blue-600 border border-blue-200 cursor-default hover:bg-blue-100'
+            ? 'bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 cursor-default hover:bg-blue-100 dark:hover:bg-blue-900/20'
             : plan.id === 'free'
               ? 'bg-canvas-subtle text-fg-subtle border border-ui-border cursor-default hover:bg-canvas-subtle'
               : 'bg-blue-600 hover:bg-blue-700 text-white',

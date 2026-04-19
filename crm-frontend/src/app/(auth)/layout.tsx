@@ -6,7 +6,7 @@ export default function AuthLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="relative min-h-screen bg-[#F9FAFB] flex flex-col items-center justify-center px-4">
+    <div className="relative min-h-screen bg-canvas flex flex-col items-center justify-center px-4">
       
       {/* Subtle top border accent */}
       <div className="fixed top-0 left-0 right-0 h-0.5 bg-blue-600" />
@@ -33,7 +33,7 @@ export default function AuthLayout({
               </svg>
             </div>
 
-            <span className="text-xl font-bold text-slate-900 tracking-tight">
+            <span className="text-xl font-bold text-fg tracking-tight">
               CRM Platform
             </span>
           </Link>
@@ -43,7 +43,7 @@ export default function AuthLayout({
         {children}
 
         {/* Footer */}
-        <p className="text-center text-xs text-gray-400 mt-8">
+        <p className="text-center text-xs text-fg-subtle mt-8">
           &copy; {new Date().getFullYear()} CRM Platform. All rights reserved.
         </p>
       </div>
