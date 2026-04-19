@@ -117,6 +117,83 @@ jobs:
   # we use a placeholder URL so the Dockerfile's fail-fast guard passes, but we
   # never push the image — it's purely a build-succeeds check.
   # ────────────────────────────────────────────────────────────────────────────
+  nginx-validate:
+    name: Nginx config consistency check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify every limit_req zone reference is defined in nginx.conf
+        run: |
+          set -euo pipefail
+
+          # Extract all zone names referenced in templates (limit_req zone=NAME)
+          REFERENCED=$(grep -hoPR '(?<=limit_req zone=)\S+(?=\s)' nginx/conf.d/*.template \
+            | sed 's/;//g' | sort -u)
+
+          # Extract all zone names defined in nginx.conf (limit_req_zone ... zone=NAME:SIZE)
+          DEFINED=$(grep -hoP '(?<=zone=)\S+(?=:)' nginx/nginx.conf | sort -u)
+
+          MISSING=""
+          for zone in $REFERENCED; do
+            if ! echo "$DEFINED" | grep -qx "$zone"; then
+              MISSING="$MISSING $zone"
+            fi
+          done
+
+          if [ -n "$MISSING" ]; then
+            echo "ERROR: These limit_req zones are referenced in templates but not defined in nginx.conf:"
+            for z in $MISSING; do echo "  - $z"; done
+            echo ""
+            echo "Add limit_req_zone directives to nginx/nginx.conf in the same commit as the template changes."
+            exit 1
+          fi
+
+          echo "OK: all referenced zones are defined in nginx.conf"
+          echo "  Defined: $(echo $DEFINED | tr ' ' ', ')"
+          echo "  Referenced: $(echo $REFERENCED | tr ' ' ', ')"
+
+      - name: nginx -t syntax check against rendered single-slot config
+        run: |
+          set -euo pipefail
+
+          # Render the template with a dummy slot value
+          ACTIVE_SLOT=blue \
+          envsubst '${ACTIVE_SLOT}' \
+            < nginx/conf.d/single-slot.conf.template \
+            > /tmp/app.conf
+
+          # Generate a self-signed cert on the runner — openssl is available on
+          # ubuntu-latest but NOT inside nginx:1.27-alpine (minimal image, no CLI tools).
+          # We mount the certs as a volume so nginx can satisfy ssl_certificate.
+          mkdir -p /tmp/fake-certs
+          openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+            -keyout /tmp/fake-certs/privkey.pem \
+            -out    /tmp/fake-certs/fullchain.pem \
+            -subj   '/CN=ci-test' 2>/dev/null
+
+          # Run nginx -t inside the exact production image with all three bind mounts.
+          # --entrypoint nginx overrides the default docker-entrypoint.sh so only
+          # `nginx -t` runs — no daemon startup, no port binding needed.
+          #
+          # --add-host: nginx resolves upstream server hostnames at config-test time.
+          # crm_api_blue/green and crm_web_blue/green only exist inside the Docker
+          # network; outside it they're NXDOMAIN and nginx -t fails with "host not
+          # found in upstream". Mapping them to 127.0.0.1 satisfies the resolver
+          # without starting any real backend — nginx -t only checks config validity,
+          # it never actually connects to upstreams.
+          docker run --rm \
+            --entrypoint nginx \
+            --add-host crm_api_blue:127.0.0.1 \
+            --add-host crm_api_green:127.0.0.1 \
+            --add-host crm_web_blue:127.0.0.1 \
+            --add-host crm_web_green:127.0.0.1 \
+            -v "$(pwd)/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "/tmp/app.conf:/etc/nginx/conf.d/app.conf:ro" \
+            -v "/tmp/fake-certs:/etc/letsencrypt/live/bestpurchasestore.com:ro" \
+            nginx:1.27-alpine \
+            -t
+
   docker-validate:
     name: Docker build validation
     runs-on: ubuntu-latest

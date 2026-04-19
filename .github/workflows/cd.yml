@@ -109,6 +109,26 @@ jobs:
             git fetch origin main --quiet
             git checkout origin/main -- deploy/ nginx/ observability/ docker-compose.yml docker-compose.blue.yml docker-compose.green.yml
 
+            # ── [0b] Ensure nginx container has current bind mounts ──────────
+            # WHY: if crm_nginx was ever started without docker compose (e.g.
+            # manually, or before bind mounts were added to docker-compose.yml),
+            # it runs with the image's built-in nginx.conf — which has no
+            # limit_req_zone definitions. nginx -t then fails with "zero size
+            # shared memory zone" even though the file on disk is correct.
+            # `docker compose up -d nginx` is idempotent: no-op when the running
+            # container already matches the compose spec; recreates (<1s) only
+            # when it doesn't. A brief nginx restart here is safe — it happens
+            # before any slot is started and before any traffic switch.
+            echo "Ensuring crm_nginx has current bind mounts..."
+            if ! docker exec crm_nginx grep -q "limit_req_zone" /etc/nginx/nginx.conf 2>/dev/null; then
+              echo "  crm_nginx is using image default config (no limit_req_zone) — recreating container"
+              docker compose -f "$DEPLOY_PATH/docker-compose.yml" up -d --force-recreate nginx
+              sleep 3
+              echo "  OK: crm_nginx recreated with bind-mounted config"
+            else
+              echo "  OK: crm_nginx bind mounts verified"
+            fi
+
             # ── [1] Authenticate to GHCR ────────────────────────────────────
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
