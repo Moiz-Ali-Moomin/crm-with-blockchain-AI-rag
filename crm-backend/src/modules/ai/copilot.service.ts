@@ -83,13 +83,22 @@ export class CopilotService {
       };
     }
 
-    const raw = await this.llmProvider.generate({
-      system:
-        'You are a CRM analyst. Return ONLY valid JSON with keys: summary (string), keyPoints (string[]), sentiment (string).',
-      prompt: context.narrative,
-    });
-
-    this.logger.debug('[Copilot] summarizeContactHistory: LLM responded');
+    let raw: string;
+    try {
+      raw = await this.llmProvider.generate({
+        system:
+          'You are a CRM analyst. Return ONLY valid JSON with keys: summary (string), keyPoints (string[]), sentiment (string).',
+        prompt: context.narrative,
+      });
+      this.logger.debug('[Copilot] summarizeContactHistory: LLM responded');
+    } catch (err) {
+      this.logger.error(`Failed to summarize contact: ${(err as Error).message}`);
+      return {
+        summary: 'I am currently unable to generate a summary due to an AI service issue. Please check your provider configuration.',
+        keyPoints: [],
+        sentiment: 'neutral',
+      };
+    }
 
     const result = safeParseJson<{ summary: string; keyPoints: string[]; sentiment: string }>(raw);
     await this.redis.set(cacheKey, result, CACHE_TTL.AI_SUMMARY);
@@ -122,12 +131,18 @@ export class CopilotService {
 
     const emailContext = buildCommunicationContext(comm);
 
-    const reply = await this.llmProvider.generate({
-      system: 'You are a CRM assistant writing professional email replies.',
-      prompt: `${emailContext}\n\nInstruction: ${instruction ?? 'Reply professionally'}`,
-    });
+    let reply: string;
+    try {
+      reply = await this.llmProvider.generate({
+        system: 'You are a CRM assistant writing professional email replies.',
+        prompt: `${emailContext}\n\nInstruction: ${instruction ?? 'Reply professionally'}`,
+      });
+      this.logger.debug('[Copilot] generateEmailReply: LLM responded');
+    } catch (err) {
+      this.logger.error(`Failed to generate email reply: ${(err as Error).message}`);
+      reply = 'I am currently unable to generate an email reply due to an AI service issue. Please check your provider configuration.';
+    }
 
-    this.logger.debug('[Copilot] generateEmailReply: LLM responded');
     return { reply };
   }
 
@@ -151,12 +166,18 @@ export class CopilotService {
 
     const context = activities.map((a) => a.subject).join('\n');
 
-    const suggestion = await this.llmProvider.generate({
-      system: 'You suggest next best follow-up actions in CRM. Keep response concise.',
-      prompt: `Activity:\n${context}\n\nSuggest next action.`,
-    });
+    let suggestion: string;
+    try {
+      suggestion = await this.llmProvider.generate({
+        system: 'You suggest next best follow-up actions in CRM. Keep response concise.',
+        prompt: `Activity:\n${context}\n\nSuggest next action.`,
+      });
+      this.logger.debug('[Copilot] suggestFollowUp: LLM responded');
+    } catch (err) {
+      this.logger.error(`Failed to suggest follow-up: ${(err as Error).message}`);
+      suggestion = 'I am currently unable to suggest a follow-up action due to an AI service issue.';
+    }
 
-    this.logger.debug('[Copilot] suggestFollowUp: LLM responded');
     return { suggestion };
   }
 
@@ -181,12 +202,18 @@ export class CopilotService {
 
     const timeline = activities.map((a) => a.subject).join('\n');
 
-    const summary = await this.llmProvider.generate({
-      system: 'You summarize CRM timelines clearly and concisely.',
-      prompt: `Timeline:\n${timeline}\n\nSummarize.`,
-    });
+    let summary: string;
+    try {
+      summary = await this.llmProvider.generate({
+        system: 'You summarize CRM timelines clearly and concisely.',
+        prompt: `Timeline:\n${timeline}\n\nSummarize.`,
+      });
+      this.logger.debug('[Copilot] summarizeActivityTimeline: LLM responded');
+    } catch (err) {
+      this.logger.error(`Failed to summarize timeline: ${(err as Error).message}`);
+      summary = 'I am currently unable to summarize the activity timeline due to an AI service issue.';
+    }
 
-    this.logger.debug('[Copilot] summarizeActivityTimeline: LLM responded');
     return { summary };
   }
 
