@@ -864,12 +864,14 @@ model AiEmbedding {
   id          String   @id @default(uuid())
   tenantId    String
 
-  // ✅ FIX: map to snake_case DB columns
   entityType  String   @map("entity_type")
   entityId    String   @map("entity_id")
 
   content     String
   metadata    Json     @default("{}")
+
+  // ✅ ADD THIS (IMPORTANT)
+  embedding   Unsupported("vector(1536)")?
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -880,6 +882,7 @@ model AiEmbedding {
 
   @@map("ai_embeddings")
 }
+
 // ============================================================
 // BLOCKCHAIN — On-chain hash registry for deals
 // ============================================================
