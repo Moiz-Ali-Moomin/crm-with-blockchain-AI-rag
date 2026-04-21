@@ -61,6 +61,8 @@ import { MoveDealStageDto } from '../../deals.dto';
 import { WS_EVENTS } from '../../../../core/websocket/ws.service';
 import { DealReadModel } from '../ports/deal.repository.port';
 import { toEventPayload } from '../mappers/deal-event-payload.mapper';
+import { RedisService } from '../../../../core/cache/redis.service';
+import { CACHE_KEYS } from '../../../../core/cache/cache-keys';
 
 @Injectable()
 export class MoveDealStageUseCase {
@@ -77,6 +79,7 @@ export class MoveDealStageUseCase {
     private readonly payments: PaymentPort,
     @Inject(EVENT_PUBLISHER_PORT)
     private readonly events: EventPublisherPort,
+    private readonly redis: RedisService,
   ) {}
 
   async execute(
@@ -166,6 +169,19 @@ export class MoveDealStageUseCase {
           updatedDeal,
         ).catch(() => undefined); // already logged inside
       }
+    }
+
+    // ── 5c. Invalidate analytics dashboard cache ──────────────────────────
+    // Revenue and conversion rate are aggregated from WON/CONVERTED records.
+    // Evict the cached zeros immediately so the dashboard reflects the new
+    // deal status without waiting for the 5-minute Redis TTL to expire.
+    if (wonEvent || lostEvent) {
+      await this.redis
+        .del(CACHE_KEYS.dashboardMetrics(tenantId))
+        .catch((err: Error) =>
+          this.logger.warn(`Analytics cache eviction failed: ${err.message}`),
+        );
+      this.logger.log(`Analytics cache evicted for tenant ${tenantId} after deal ${wonEvent ? 'WON' : 'LOST'}`);
     }
 
     // ── 6. Publish automation / webhook / notifications ───────────────────

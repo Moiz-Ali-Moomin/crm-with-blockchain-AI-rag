@@ -1,11 +1,23 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+/**
+ * CopilotService — AI-assisted CRM intelligence layer
+ *
+ * Uses the injected LLMProvider (Anthropic primary → OpenAI fallback)
+ * for all generative tasks. The concrete provider is resolved at bootstrap
+ * by the AIProviderFactory and invisible to this service.
+ *
+ * JSON response strategy:
+ *   Previously used OpenAI's `response_format: { type: 'json_object' }`.
+ *   Now we instruct the model via the system prompt and parse the response.
+ *   This works identically across Anthropic and OpenAI.
+ */
+
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { PrismaService } from '../../core/database/prisma.service';
 import { RedisService } from '../../core/cache/redis.service';
 import { CACHE_KEYS, CACHE_TTL } from '../../core/cache/cache-keys';
 import { AiLogRepository } from './repositories/ai-log.repository';
-import OpenAI from 'openai';
 import { Prisma } from '@prisma/client';
+import { LLMProvider, LLM_PROVIDER } from './providers/llm.interface';
 
 type CommunicationContext = Prisma.CommunicationGetPayload<{
   select: {
@@ -24,22 +36,28 @@ function buildCommunicationContext(comm: CommunicationContext): string {
   return lines.join('\n');
 }
 
+/** Safely parse JSON from LLM output, stripping markdown fences if present */
+function safeParseJson<T>(raw: string): T {
+  // Strip ```json ... ``` or ``` ... ``` fences that some models include
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+
+  return JSON.parse(cleaned) as T;
+}
+
 @Injectable()
 export class CopilotService {
   private readonly logger = new Logger(CopilotService.name);
-  private readonly openai: OpenAI;
-  private readonly model = 'gpt-4o';
 
   constructor(
-    private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    @Inject(LLM_PROVIDER) private readonly llmProvider: LLMProvider,
     @Optional() private readonly aiLogRepo?: AiLogRepository,
-  ) {
-    this.openai = new OpenAI({
-      apiKey: this.config.get<string>('OPENAI_API_KEY') ?? '',
-    });
-  }
+  ) {}
 
   // ─────────────────────────────────────────────────────────────
   // CONTACT SUMMARY
@@ -51,15 +69,11 @@ export class CopilotService {
     contextLimit = 20,
   ): Promise<{ summary: string; keyPoints: string[]; sentiment: string }> {
     const cacheKey = CACHE_KEYS.aiSummary(tenantId, 'contact', contactId);
-    const cached = await this.redis.get<any>(cacheKey);
+    const cached = await this.redis.get<{ summary: string; keyPoints: string[]; sentiment: string }>(cacheKey);
 
     if (cached) return cached;
 
-    const context = await this.buildContactContext(
-      tenantId,
-      contactId,
-      contextLimit,
-    );
+    const context = await this.buildContactContext(tenantId, contactId, contextLimit);
 
     if (!context.hasData) {
       return {
@@ -69,28 +83,16 @@ export class CopilotService {
       };
     }
 
-    const completion = await this.openai.chat.completions.create({
-      model: this.model,
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a CRM analyst. Return JSON: summary, keyPoints, sentiment.',
-        },
-        {
-          role: 'user',
-          content: context.narrative,
-        },
-      ],
+    const raw = await this.llmProvider.generate({
+      system:
+        'You are a CRM analyst. Return ONLY valid JSON with keys: summary (string), keyPoints (string[]), sentiment (string).',
+      prompt: context.narrative,
     });
 
-    const raw = completion.choices[0].message.content ?? '{}';
-    const result = JSON.parse(raw);
+    this.logger.debug('[Copilot] summarizeContactHistory: LLM responded');
 
+    const result = safeParseJson<{ summary: string; keyPoints: string[]; sentiment: string }>(raw);
     await this.redis.set(cacheKey, result, CACHE_TTL.AI_SUMMARY);
-
     return result;
   }
 
@@ -120,27 +122,13 @@ export class CopilotService {
 
     const emailContext = buildCommunicationContext(comm);
 
-    const completion = await this.openai.chat.completions.create({
-      model: this.model,
-      temperature: 0.3,
-      max_tokens: 500,
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a CRM assistant writing email replies.',
-        },
-        {
-          role: 'user',
-          content: `${emailContext}\n\nInstruction: ${
-            instruction ?? 'Reply professionally'
-          }`,
-        },
-      ],
+    const reply = await this.llmProvider.generate({
+      system: 'You are a CRM assistant writing professional email replies.',
+      prompt: `${emailContext}\n\nInstruction: ${instruction ?? 'Reply professionally'}`,
     });
 
-    return {
-      reply: completion.choices[0].message.content ?? '',
-    };
+    this.logger.debug('[Copilot] generateEmailReply: LLM responded');
+    return { reply };
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -163,25 +151,13 @@ export class CopilotService {
 
     const context = activities.map((a) => a.subject).join('\n');
 
-    const completion = await this.openai.chat.completions.create({
-      model: this.model,
-      temperature: 0.2,
-      max_tokens: 300,
-      messages: [
-        {
-          role: 'system',
-          content: 'You suggest next best follow-up actions in CRM.',
-        },
-        {
-          role: 'user',
-          content: `Activity:\n${context}\n\nSuggest next action.`,
-        },
-      ],
+    const suggestion = await this.llmProvider.generate({
+      system: 'You suggest next best follow-up actions in CRM. Keep response concise.',
+      prompt: `Activity:\n${context}\n\nSuggest next action.`,
     });
 
-    return {
-      suggestion: completion.choices[0].message.content ?? '',
-    };
+    this.logger.debug('[Copilot] suggestFollowUp: LLM responded');
+    return { suggestion };
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -205,25 +181,13 @@ export class CopilotService {
 
     const timeline = activities.map((a) => a.subject).join('\n');
 
-    const completion = await this.openai.chat.completions.create({
-      model: this.model,
-      temperature: 0.2,
-      max_tokens: 400,
-      messages: [
-        {
-          role: 'system',
-          content: 'You summarize CRM timelines clearly.',
-        },
-        {
-          role: 'user',
-          content: `Timeline:\n${timeline}\n\nSummarize.`,
-        },
-      ],
+    const summary = await this.llmProvider.generate({
+      system: 'You summarize CRM timelines clearly and concisely.',
+      prompt: `Timeline:\n${timeline}\n\nSummarize.`,
     });
 
-    return {
-      summary: completion.choices[0].message.content ?? '',
-    };
+    this.logger.debug('[Copilot] summarizeActivityTimeline: LLM responded');
+    return { summary };
   }
 
   // ─────────────────────────────────────────────────────────────

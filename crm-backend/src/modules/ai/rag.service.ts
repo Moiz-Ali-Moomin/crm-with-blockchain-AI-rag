@@ -6,8 +6,9 @@
  *   2. Cache lookup         — identical query+filter combos cached for 2 minutes
  *   3. Vector search        — find semantically similar CRM records
  *   4. Context window       — format top-K results into a prompt context
- *   5. LLM completion       — GPT-4o answers the query using only retrieved facts
- *      └─ wrapped in CircuitBreaker — fast-fails if OpenAI is degraded
+ *   5. LLM completion       — answers the query using only retrieved facts
+ *      └─ wrapped in CircuitBreaker — fast-fails if LLM provider is degraded
+ *      └─ primary: Anthropic (Claude Sonnet) → fallback: OpenAI (GPT-4o)
  *   6. Usage recording      — token count recorded for billing + quota
  *   7. Business metrics     — latency histogram + token counter → Grafana
  *   8. Audit log            — every call persisted to MongoDB (fire-and-forget)
@@ -19,13 +20,12 @@
  *
  * Prompt injection defence:
  *   - System prompt is static and hardcoded — no user input reaches it
- *   - User question is placed in the `user` message, not the `system` message
+ *   - User question is placed in the `prompt` field, not the `system` field
  *   - Temperature is 0.2 (near-deterministic) for factual retrieval tasks
  */
 
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import OpenAI from 'openai';
 import { createHash } from 'crypto';
 import { VectorSearchService, SemanticSearchResult } from './vector-search.service';
 import { AiLogRepository } from './repositories/ai-log.repository';
@@ -35,6 +35,7 @@ import { AiOperationType } from './types/ai-operation-type.enum';
 import { CircuitBreakerService } from '../../core/resilience/circuit-breaker.service';
 import { AiCostControlService, AiTier } from './cost-control.service';
 import { BusinessMetricsService } from '../../core/metrics/business-metrics.service';
+import { LLMProvider, LLM_PROVIDER } from './providers/llm.interface';
 
 export interface RagQueryParams {
   tenantId: string;
@@ -71,8 +72,6 @@ Answer ONLY using provided context. If not enough info, say so. Be concise and f
 @Injectable()
 export class RagService {
   private readonly logger = new Logger(RagService.name);
-  private readonly openai: OpenAI;
-  private readonly model = 'gpt-4o';
 
   constructor(
     private readonly config: ConfigService,
@@ -81,12 +80,9 @@ export class RagService {
     private readonly circuitBreaker: CircuitBreakerService,
     private readonly costControl: AiCostControlService,
     private readonly businessMetrics: BusinessMetricsService,
+    @Inject(LLM_PROVIDER) private readonly llmProvider: LLMProvider,
     @Optional() private readonly aiLogRepo?: AiLogRepository,
-  ) {
-    this.openai = new OpenAI({
-      apiKey: this.config.get<string>('OPENAI_API_KEY') ?? 'not-configured',
-    });
-  }
+  ) {}
 
   async query(params: RagQueryParams): Promise<RagResponse> {
     const {
@@ -99,16 +95,20 @@ export class RagService {
     } = params;
 
     // ── 0. Key guard — fail fast before any I/O ──────────────────────────────
-    if (!this.config.get<string>('OPENAI_API_KEY')) {
+    const anthropicKey = this.config.get<string>('ANTHROPIC_API_KEY');
+    const openaiKey    = this.config.get<string>('OPENAI_API_KEY');
+    const aiEnabled    = this.config.get<string>('ENABLE_AI') === 'true';
+
+    if (!aiEnabled || (!anthropicKey && !openaiKey)) {
       return {
-        answer: 'AI features are not configured. Please set OPENAI_API_KEY and ENABLE_AI=true.',
+        answer: 'AI features are not configured. Please set ANTHROPIC_API_KEY (or OPENAI_API_KEY) and ENABLE_AI=true.',
         sources: [],
         confidence: 0,
         fromCache: false,
       };
     }
 
-    // ── 1. Quota check (before touching OpenAI) ──────────────────────────────
+    // ── 1. Quota check (before touching any LLM) ─────────────────────────────
     await this.costControl.assertQuota(tenantId, tier, ESTIMATED_TOKENS_PER_REQUEST);
 
     // ── 2. Cache lookup ──────────────────────────────────────────────────────
@@ -125,7 +125,7 @@ export class RagService {
         tenantId,
         tokensUsed: 0,
         latencyMs: 0,
-        model: this.model,
+        model: 'cached',
         cached: true,
       });
 
@@ -172,31 +172,28 @@ export class RagService {
     // ── 4. LLM call — protected by circuit breaker ───────────────────────────
     const start = Date.now();
 
-    const completion = await this.circuitBreaker.execute('openai', () =>
-      this.openai.chat.completions.create({
-        model: this.model,
-        temperature: 0.2,
-        max_tokens: 800,
-        messages: [
-          { role: 'system', content: RAG_SYSTEM_PROMPT },
-          { role: 'user', content: `CRM Context:\n${contextWindow}\n\nQuestion: ${query}` },
-        ],
+    const answer = await this.circuitBreaker.execute('llm', () =>
+      this.llmProvider.generate({
+        system: RAG_SYSTEM_PROMPT,
+        prompt: query,
+        context: contextWindow,
       }),
     );
 
-    const latencyMs  = Date.now() - start;
-    const answer     = completion.choices[0].message.content ?? '';
-    const tokensUsed = completion.usage?.total_tokens ?? 0;
+    const latencyMs = Date.now() - start;
 
-    // ── 5. Record actual usage (non-blocking) ────────────────────────────────
-    void this.costControl.recordUsage(tenantId, tokensUsed);
+    this.logger.log(`[RAG] LLM responded in ${latencyMs}ms`);
+
+    // ── 5. Record actual usage (non-blocking, estimate) ───────────────────────
+    const estimatedTokens = Math.ceil((contextWindow.length + query.length) / 4);
+    void this.costControl.recordUsage(tenantId, estimatedTokens);
 
     // ── 6. Business metrics ──────────────────────────────────────────────────
     this.businessMetrics.recordAiUsage({
       tenantId,
-      tokensUsed,
+      tokensUsed: estimatedTokens,
       latencyMs,
-      model: this.model,
+      model: this.config.get<string>('LLM_PROVIDER') ?? 'anthropic',
       cached: false,
     });
 
@@ -219,7 +216,7 @@ export class RagService {
       confidence,
       fromCache: false,
       latencyMs,
-      tokensUsed,
+      tokensUsed: estimatedTokens,
     };
 
     // ── 7. Cache + audit ─────────────────────────────────────────────────────
@@ -231,7 +228,11 @@ export class RagService {
       prompt: query,
       response: answer,
       latencyMs,
-      metadata: { model: this.model, temperature: 0.2, tokensUsed },
+      metadata: {
+        provider: this.config.get<string>('LLM_PROVIDER') ?? 'anthropic',
+        temperature: 0.2,
+        tokensEstimated: estimatedTokens,
+      },
     });
 
     return result;

@@ -15,7 +15,14 @@ export const CreateDealSchema = z.object({
   customFields: z.record(z.unknown()).default({}),
 });
 
-export const UpdateDealSchema = CreateDealSchema.omit({ pipelineId: true, stageId: true }).partial();
+export const UpdateDealSchema = CreateDealSchema
+  .omit({ pipelineId: true, stageId: true })
+  .partial()
+  .extend({
+    // Status can be changed via the generic update endpoint.
+    // The use-case auto-stamps wonAt / lostAt when status transitions to WON / LOST.
+    status: z.enum(['OPEN', 'WON', 'LOST', 'ON_HOLD']).optional(),
+  });
 
 export const MoveDealStageSchema = z.object({
   stageId: z.string().uuid(),

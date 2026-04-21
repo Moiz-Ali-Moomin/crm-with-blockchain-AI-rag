@@ -2,52 +2,35 @@
  * RealEmbeddingService
  *
  * Production implementation of IEmbeddingService.
- * Calls OpenAI `text-embedding-3-small` and persists vectors to ai_embeddings.
- *
- * Only provided when ENABLE_AI=true and OPENAI_API_KEY is set.
- * Never instantiated in CI smoke tests or environments without an API key.
+ * Delegates vector generation to the injected EmbeddingProvider
+ * (Ollama primary → OpenAI fallback) via the EMBEDDING_PROVIDER token.
+ * Persists generated vectors to ai_embeddings via Prisma + raw SQL.
  *
  * Design decisions:
- * - openai client is constructed lazily in the constructor — at that point
- *   the module factory has already confirmed OPENAI_API_KEY exists, so
- *   config.get() (not getOrThrow) is safe and sufficient.
+ * - generateEmbedding() now calls the provider, not OpenAI directly.
+ *   This is the only change from the original — all DB logic is unchanged.
+ * - The EMBEDDING_PROVIDER token is injected via constructor so this class
+ *   remains fully testable (mock the token in specs).
  * - Upsert is idempotent on (tenantId, entityType, entityId).
  * - Always enqueued via AiEmbeddingWorker — never on the hot path.
  */
 
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import OpenAI from 'openai';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '../../core/database/prisma.service';
 import { IEmbeddingService } from './embedding.interface';
+import { EmbeddingProvider, EMBEDDING_PROVIDER } from './providers/embedding-provider.interface';
 
 @Injectable()
 export class RealEmbeddingService implements IEmbeddingService {
   private readonly logger = new Logger(RealEmbeddingService.name);
-  private readonly openai: OpenAI;
-  private readonly model = 'text-embedding-3-small';
-  private readonly DIMENSIONS = 1536;
 
   constructor(
-    private readonly config: ConfigService,
     private readonly prisma: PrismaService,
-  ) {
-    // config.get() is intentional — the AiModule factory guarantees this key
-    // exists before providing this class. getOrThrow is not needed here and
-    // would be redundant after the module-level guard.
-    this.openai = new OpenAI({
-      apiKey: this.config.get<string>('OPENAI_API_KEY') ?? '',
-    });
-  }
+    @Inject(EMBEDDING_PROVIDER) private readonly embeddingProvider: EmbeddingProvider,
+  ) {}
 
   async generateEmbedding(text: string): Promise<number[]> {
-    const truncated = text.slice(0, 30000);
-    const response = await this.openai.embeddings.create({
-      model: this.model,
-      input: truncated,
-      dimensions: this.DIMENSIONS,
-    });
-    return response.data[0].embedding;
+    return this.embeddingProvider.embed(text);
   }
 
   async upsertEmbedding(params: {
@@ -63,8 +46,8 @@ export class RealEmbeddingService implements IEmbeddingService {
     await this.prisma.withoutTenantScope(() =>
       this.prisma.aiEmbedding.upsert({
         where: { tenantId_entityType_entityId: { tenantId, entityType, entityId } },
-        create: { tenantId, entityType, entityId, content, metadata: (metadata ?? {}) as any },
-        update: { content, metadata: (metadata ?? {}) as any, updatedAt: new Date() },
+        create: { tenantId, entityType, entityId, content, metadata: (metadata ?? {}) as object },
+        update: { content, metadata: (metadata ?? {}) as object, updatedAt: new Date() },
       }),
     );
 

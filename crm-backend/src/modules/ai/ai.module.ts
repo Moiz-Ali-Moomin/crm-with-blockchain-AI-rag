@@ -1,29 +1,25 @@
 /**
- * AiModule — dynamic provider selection based on ENABLE_AI feature flag
+ * AiModule — dynamic provider selection based on ENABLE_AI + LLM/Embedding ENV vars
  *
- * ┌─────────────────────────────────────────────────────────────────────────┐
- * │  ENABLE_AI=true  + OPENAI_API_KEY set  →  RealEmbeddingService         │
- * │  ENABLE_AI=false OR OPENAI_API_KEY missing  →  MockEmbeddingService    │
- * └─────────────────────────────────────────────────────────────────────────┘
+ * ┌─────────────────────────────────────────────────────────────────────────────┐
+ * │  LLM_PROVIDER=anthropic (default) → AnthropicLLMProvider                  │
+ * │  LLM_FALLBACK=openai   (default) → OpenAILLMProvider on error             │
+ * │                                                                             │
+ * │  EMBEDDING_PROVIDER=ollama (default) → OllamaEmbeddingProvider            │
+ * │  EMBEDDING_FALLBACK=openai (default) → OpenAIEmbeddingProvider on error   │
+ * │                                                                             │
+ * │  ENABLE_AI=false OR no API keys → MockEmbeddingService (AI disabled)      │
+ * └─────────────────────────────────────────────────────────────────────────────┘
  *
- * WHY a factory provider, not conditional module imports:
- *   NestJS resolves the DI graph at bootstrap. If RealEmbeddingService were
- *   always registered and OPENAI_API_KEY were absent, its constructor would
- *   crash before the HTTP server binds — killing /health/live. The factory
- *   delays that decision to runtime config inspection, after which only the
- *   appropriate class is instantiated.
+ * Provider tokens:
+ *   LLM_PROVIDER       → LLMProvider interface (used by RagService, CopilotService)
+ *   EMBEDDING_SERVICE  → IEmbeddingService interface (used by VectorSearchService, worker)
+ *   EMBEDDING_PROVIDER → EmbeddingProvider interface (used internally by RealEmbeddingService)
  *
- * WHY EMBEDDING_SERVICE token, not a class:
- *   Consumers (VectorSearchService, AiEmbeddingWorker) depend on the
- *   IEmbeddingService interface via @Inject(EMBEDDING_SERVICE). The concrete
- *   class is invisible to them — swapping implementations is a module concern,
- *   not a consumer concern.
- *
- * Scalability note:
- *   The same pattern applies to any optional external integration:
- *   Stripe → PAYMENT_SERVICE token, real vs mock
- *   AWS S3 → STORAGE_SERVICE token, real vs local
- *   Twilio → SMS_SERVICE token, real vs log-only
+ * Adding a new LLM provider later:
+ *   1. Create a class implementing LLMProvider in providers/
+ *   2. Add a case to buildLLMProvider() in ai-provider.factory.ts
+ *   3. Set LLM_PROVIDER=<new-name> in .env — zero other changes needed.
  */
 
 import { Module } from '@nestjs/common';
@@ -42,6 +38,10 @@ import { AiCostControlService } from './cost-control.service';
 import { EMBEDDING_SERVICE } from './embedding.interface';
 import { RealEmbeddingService } from './real-embedding.service';
 import { MockEmbeddingService } from './mock-embedding.service';
+
+import { LLM_PROVIDER } from './providers/llm.interface';
+import { EMBEDDING_PROVIDER } from './providers/embedding-provider.interface';
+import { AIProviderFactory } from './providers/ai-provider.factory';
 
 import { AiLog, AiLogSchema } from './schemas/ai-log.schema';
 import { AiLogRepository } from './repositories/ai-log.repository';
@@ -71,15 +71,36 @@ const isMongoEnabled = !!process.env.MONGO_URI;
   controllers: [AiController],
 
   providers: [
+    // ── LLM_PROVIDER: Anthropic → OpenAI fallback ────────────────────────────
+    {
+      provide: LLM_PROVIDER,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => AIProviderFactory.getLLM(config),
+    },
+
+    // ── EMBEDDING_PROVIDER: Ollama → OpenAI fallback (raw vector generation) ─
+    {
+      provide: EMBEDDING_PROVIDER,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => AIProviderFactory.getEmbedding(config),
+    },
+
+    // ── EMBEDDING_SERVICE: full IEmbeddingService (includes DB upsert/delete) ─
     {
       provide: EMBEDDING_SERVICE,
-      inject: [ConfigService, PrismaService],
-      useFactory: (config: ConfigService, prisma: PrismaService) => {
+      inject: [ConfigService, PrismaService, EMBEDDING_PROVIDER],
+      useFactory: (
+        config: ConfigService,
+        prisma: PrismaService,
+        embeddingProvider: ReturnType<typeof AIProviderFactory.getEmbedding>,
+      ) => {
         const enabled = config.get<string>('ENABLE_AI') === 'true';
-        const hasKey = !!config.get<string>('OPENAI_API_KEY');
+        const hasAnyKey =
+          !!config.get<string>('ANTHROPIC_API_KEY') ||
+          !!config.get<string>('OPENAI_API_KEY');
 
-        if (enabled && hasKey) {
-          return new RealEmbeddingService(config, prisma);
+        if (enabled && hasAnyKey) {
+          return new RealEmbeddingService(prisma, embeddingProvider);
         }
 
         return new MockEmbeddingService();
@@ -97,7 +118,9 @@ const isMongoEnabled = !!process.env.MONGO_URI;
   ],
 
   exports: [
+    LLM_PROVIDER,
     EMBEDDING_SERVICE,
+    EMBEDDING_PROVIDER,
     RagService,
     AiCostControlService,
     BullModule,

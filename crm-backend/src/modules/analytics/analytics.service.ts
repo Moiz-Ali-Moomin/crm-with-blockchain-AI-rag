@@ -46,27 +46,46 @@ export class AnalyticsService {
       totalActivities,
       openTickets,
     ] = await this.prisma.$transaction([
-      this.prisma.lead.count(),
-      this.prisma.lead.count({ where: { createdAt: { gte: thisMonthStart } } }),
-      this.prisma.lead.count({ where: { createdAt: { gte: lastMonthStart, lte: lastMonthEnd } } }),
-      this.prisma.contact.count(),
+      // tenantId scopes every query for correct multi-tenant isolation
+      this.prisma.lead.count({ where: { tenantId } }),
+      this.prisma.lead.count({ where: { tenantId, createdAt: { gte: thisMonthStart } } }),
+      this.prisma.lead.count({ where: { tenantId, createdAt: { gte: lastMonthStart, lte: lastMonthEnd } } }),
+      this.prisma.contact.count({ where: { tenantId } }),
       this.prisma.deal.aggregate({
-        where: { status: 'OPEN' },
+        where: { tenantId, status: 'OPEN' },
         _count: true,
         _sum: { value: true },
       }),
       this.prisma.deal.aggregate({
-        where: { status: 'WON', wonAt: { gte: thisMonthStart } },
+        // OR fallback: accept WON deals where wonAt was not set (e.g. via generic update endpoint)
+        // in that case we fall back to createdAt so revenue is never silently zeroed.
+        where: {
+          tenantId,
+          status: 'WON',
+          OR: [
+            { wonAt: { gte: thisMonthStart } },
+            { wonAt: null, createdAt: { gte: thisMonthStart } },
+          ],
+        },
         _count: true,
         _sum: { value: true },
       }),
-      this.prisma.activity.count({ where: { createdAt: { gte: thisMonthStart } } }),
-      this.prisma.ticket.count({ where: { status: { not: 'CLOSED' } } }),
+      this.prisma.activity.count({ where: { tenantId, createdAt: { gte: thisMonthStart } } }),
+      this.prisma.ticket.count({ where: { tenantId, status: { not: 'CLOSED' } } }),
     ]);
 
     // Lead conversion rate: converted / (total leads created in period)
+    // OR fallback: leads marked CONVERTED without an explicit convertedAt timestamp
+    // (e.g. via direct status update) still count — we fall back to createdAt.
     const convertedLeads = await this.prisma.lead.count({
-      where: { status: 'CONVERTED', convertedAt: { gte: thisMonthStart } },
+      where: {
+        tenantId,
+        status: 'CONVERTED',
+        OR: [
+          { convertedAt: { gte: thisMonthStart } },
+          { convertedAt: null, createdAt: { gte: thisMonthStart } },
+        ],
+      },
     });
 
     const conversionRate = leadsThisMonth > 0

@@ -41,10 +41,21 @@ export class UpdateDealUseCase {
     const existing = await this.dealRepo.findById(id);
     if (!existing) throw new NotFoundError('Deal', id);
 
-    // 2. Persist updates
-    const updated = await this.dealRepo.update(id, dto as any);
+    // 2. Auto-stamp wonAt / lostAt when status transitions via the generic endpoint.
+    //    MoveDealStageUseCase handles this via the domain entity; here we ensure the
+    //    analytics revenue query (which filters on wonAt) is never silently broken.
+    const updateData: Record<string, unknown> = { ...dto };
+    if (dto.status === 'WON' && existing.status !== 'WON' && !existing.wonAt) {
+      updateData.wonAt = new Date();
+    }
+    if (dto.status === 'LOST' && existing.status !== 'LOST' && !existing.lostAt) {
+      updateData.lostAt = new Date();
+    }
 
-    // 3. Async side-effects (non-blocking)
+    // 3. Persist updates
+    const updated = await this.dealRepo.update(id, updateData as any);
+
+    // 4. Async side-effects (non-blocking)
     this.events
       .publishWebhook(tenantId, 'DEAL_UPDATED', toEventPayload(updated))
       .catch((err: Error) =>

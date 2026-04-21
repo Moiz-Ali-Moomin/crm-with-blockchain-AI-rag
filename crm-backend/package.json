@@ -20,6 +20,7 @@
     "seed": "node dist/prisma/seed.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@nestjs/bullmq": "^10.1.1",
     "@nestjs/common": "^10.3.0",
     "@nestjs/config": "^3.1.1",
