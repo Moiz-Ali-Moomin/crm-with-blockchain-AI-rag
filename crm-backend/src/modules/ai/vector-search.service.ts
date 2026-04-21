@@ -84,6 +84,15 @@ export class VectorSearchService {
 
     // Generate embedding for the query text
     const queryEmbedding = await this.embeddingService.generateEmbedding(query);
+
+    // pgvector cosine distance is undefined for zero-magnitude vectors (division by zero).
+    // MockEmbeddingService returns all-zeros when AI is disabled — bail out early.
+    const magnitude = Math.sqrt(queryEmbedding.reduce((sum, v) => sum + v * v, 0));
+    if (magnitude === 0) {
+      this.logger.debug('Zero-magnitude embedding (AI disabled) — skipping vector search');
+      return [];
+    }
+
     const vectorLiteral = `[${queryEmbedding.join(',')}]`;
 
     // pgvector cosine distance: `<=>` returns 0 (identical) to 2 (opposite)

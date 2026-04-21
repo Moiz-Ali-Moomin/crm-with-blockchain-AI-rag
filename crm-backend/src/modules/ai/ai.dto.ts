@@ -3,7 +3,7 @@ import { z } from 'zod';
 // ── Semantic Search ────────────────────────────────────────────────────────────
 
 export const SemanticSearchSchema = z.object({
-  query: z.string().min(3).max(500),
+  query: z.string().min(1).max(500),
   entityTypes: z
     .array(z.enum(['activity', 'communication', 'ticket']))
     .optional()
@@ -68,7 +68,7 @@ export interface EmbeddingJobPayload {
 // ── RAG Query ──────────────────────────────────────────────────────────────────
 
 export const RagQuerySchema = z.object({
-  query: z.string().min(3).max(800),
+  query: z.string().min(1).max(800),
   entityTypes: z
     .array(z.enum(['activity', 'communication', 'ticket']))
     .optional()

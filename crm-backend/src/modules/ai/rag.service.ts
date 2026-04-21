@@ -98,6 +98,16 @@ export class RagService {
       threshold = 0.72,
     } = params;
 
+    // ── 0. Key guard — fail fast before any I/O ──────────────────────────────
+    if (!this.config.get<string>('OPENAI_API_KEY')) {
+      return {
+        answer: 'AI features are not configured. Please set OPENAI_API_KEY and ENABLE_AI=true.',
+        sources: [],
+        confidence: 0,
+        fromCache: false,
+      };
+    }
+
     // ── 1. Quota check (before touching OpenAI) ──────────────────────────────
     await this.costControl.assertQuota(tenantId, tier, ESTIMATED_TOKENS_PER_REQUEST);
 
@@ -158,10 +168,6 @@ export class RagService {
     }
 
     const contextWindow = this.buildContextWindow(chunks);
-
-    if (!this.config.get<string>('OPENAI_API_KEY')) {
-      throw new Error('OPENAI_API_KEY missing');
-    }
 
     // ── 4. LLM call — protected by circuit breaker ───────────────────────────
     const start = Date.now();
