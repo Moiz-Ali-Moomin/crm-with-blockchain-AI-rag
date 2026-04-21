@@ -17,7 +17,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
-    "seed": "node dist/prisma/seed.js"
+    "seed": "node dist/prisma/seed.js",
+    "fix:won-at": "npx ts-node prisma/fix-won-at.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
