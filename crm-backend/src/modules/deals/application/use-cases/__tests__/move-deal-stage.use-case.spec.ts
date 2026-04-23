@@ -18,6 +18,7 @@ import { EVENT_PUBLISHER_PORT, EventPublisherPort } from '../../ports/event-publ
 import { NotFoundError } from '../../../../../shared/errors/domain.errors';
 import { InvalidDealStateTransitionError } from '../../../domain/errors/deal.errors';
 import { Test, TestingModule } from '@nestjs/testing';
+import { RedisService } from '../../../../../core/cache/redis.service';
 
 // ── Mock factories ────────────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ describe('MoveDealStageUseCase', () => {
   let mockWallets: jest.Mocked<WalletPort>;
   let mockPayments: jest.Mocked<PaymentPort>;
   let mockEvents: jest.Mocked<EventPublisherPort>;
+  let mockRedis: jest.Mocked<Pick<RedisService, 'del'>>;
 
   beforeEach(async () => {
     mockRepo       = makeMockRepo();
@@ -75,6 +77,9 @@ describe('MoveDealStageUseCase', () => {
       publishNotification: jest.fn().mockResolvedValue(undefined),
       emitWebSocket:       jest.fn(),
     };
+    mockRedis = {
+      del: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -84,6 +89,7 @@ describe('MoveDealStageUseCase', () => {
         { provide: WALLET_PORT,          useValue: mockWallets },
         { provide: PAYMENT_PORT,         useValue: mockPayments },
         { provide: EVENT_PUBLISHER_PORT, useValue: mockEvents },
+        { provide: RedisService,         useValue: mockRedis },
       ],
     }).compile();
 
