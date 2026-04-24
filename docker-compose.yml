@@ -173,7 +173,7 @@ services:
     depends_on:
       - prometheus
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:9093/-/healthy"]
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:9093/alertmanager/-/healthy"]
       interval: 30s
       timeout: 5s
       retries: 3
