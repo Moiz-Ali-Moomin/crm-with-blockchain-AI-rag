@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { getQueueToken } from '@nestjs/bullmq';
 import { RagService, RagQueryParams, RagResponse } from './rag.service';
 import { VectorSearchService, SemanticSearchResult } from './vector-search.service';
 import { AiLogRepository } from './repositories/ai-log.repository';
@@ -8,6 +9,8 @@ import { CircuitBreakerService } from '../../core/resilience/circuit-breaker.ser
 import { AiCostControlService } from './cost-control.service';
 import { BusinessMetricsService } from '../../core/metrics/business-metrics.service';
 import { LLM_PROVIDER } from './providers/llm.interface';
+import { DbFallbackService } from './db-fallback.service';
+import { QUEUE_NAMES } from '../../core/queue/queue.constants';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +65,14 @@ const mockBusinessMetrics = {
   recordAiUsage: jest.fn(),
 };
 
+const mockDbFallback = {
+  fetchContext: jest.fn().mockResolvedValue({ context: '', embeddingJobs: [] }),
+};
+
+const mockEmbeddingQueue = {
+  addBulk: jest.fn().mockResolvedValue([]),
+};
+
 // ── Test suite ────────────────────────────────────────────────────────────────
 
 describe('RagService', () => {
@@ -91,6 +102,8 @@ describe('RagService', () => {
         { provide: CircuitBreakerService, useValue: mockCircuitBreaker },
         { provide: AiCostControlService, useValue: mockCostControl },
         { provide: BusinessMetricsService, useValue: mockBusinessMetrics },
+        { provide: DbFallbackService, useValue: mockDbFallback },
+        { provide: getQueueToken(QUEUE_NAMES.AI_EMBEDDING), useValue: mockEmbeddingQueue },
       ],
     }).compile();
 
