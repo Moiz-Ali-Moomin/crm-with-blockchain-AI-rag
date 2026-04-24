@@ -33,6 +33,7 @@ import { AiLog, AiLogSchema } from './schemas/ai-log.schema';
 import { AiLogRepository } from './repositories/ai-log.repository';
 import { QUEUE_NAMES } from '../../core/queue/queue.constants';
 import { BlockchainModule } from '../blockchain/blockchain.module';
+import { DbFallbackService } from './db-fallback.service';
 
 // 🔥 same flag as CoreModule
 const isMongoEnabled = !!process.env.MONGO_URI;
@@ -96,6 +97,7 @@ const isMongoEnabled = !!process.env.MONGO_URI;
     CopilotService,
     RagService,
     AiCostControlService,
+    DbFallbackService,
 
     // ✅ ONLY provide repository if Mongo exists
     ...(isMongoEnabled ? [AiLogRepository] : []),

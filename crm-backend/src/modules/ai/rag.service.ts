@@ -25,6 +25,8 @@
  */
 
 import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
 import { VectorSearchService, SemanticSearchResult } from './vector-search.service';
@@ -36,6 +38,9 @@ import { CircuitBreakerService } from '../../core/resilience/circuit-breaker.ser
 import { AiCostControlService, AiTier } from './cost-control.service';
 import { BusinessMetricsService } from '../../core/metrics/business-metrics.service';
 import { LLMProvider, LLM_PROVIDER } from './providers/llm.interface';
+import { DbFallbackService } from './db-fallback.service';
+import { QUEUE_NAMES } from '../../core/queue/queue.constants';
+import { EmbeddingJobPayload } from './ai.dto';
 
 export interface RagQueryParams {
   tenantId: string;
@@ -82,7 +87,9 @@ export class RagService {
     private readonly circuitBreaker: CircuitBreakerService,
     private readonly costControl: AiCostControlService,
     private readonly businessMetrics: BusinessMetricsService,
+    private readonly dbFallback: DbFallbackService,
     @Inject(LLM_PROVIDER) private readonly llmProvider: LLMProvider,
+    @InjectQueue(QUEUE_NAMES.AI_EMBEDDING) private readonly embeddingQueue: Queue<EmbeddingJobPayload>,
     @Optional() private readonly aiLogRepo?: AiLogRepository,
   ) {}
 
@@ -150,8 +157,22 @@ export class RagService {
       threshold,
     });
 
-    const hasContext = chunks.length > 0;
-    const contextWindow = hasContext ? this.buildContextWindow(chunks) : '';
+    // ── 3b. DB fallback — query Postgres directly when pgvector has no results ─
+    let contextWindow  = '';
+    let hasContext     = chunks.length > 0;
+    let dbEmbeddingJobs: Omit<EmbeddingJobPayload, 'action'>[] = [];
+
+    if (hasContext) {
+      contextWindow = this.buildContextWindow(chunks);
+    } else {
+      const fallback = await this.dbFallback.fetchContext(tenantId, query);
+      if (fallback.context) {
+        contextWindow    = fallback.context;
+        hasContext       = true;
+        dbEmbeddingJobs  = fallback.embeddingJobs;
+        this.logger.log(`[RAG] DB fallback: ${dbEmbeddingJobs.length} records fetched for tenant=${tenantId}`);
+      }
+    }
 
     // ── 4. LLM call — protected by circuit breaker ───────────────────────────
     const start = Date.now();
@@ -205,6 +226,19 @@ export class RagService {
 
     // ── 7. Cache + audit ─────────────────────────────────────────────────────
     await this.redis.set(cacheKey, result, CACHE_TTL.AI_SEARCH);
+
+    // ── 8. Lazy embedding — store DB-fallback records so next query hits pgvector
+    if (dbEmbeddingJobs.length > 0) {
+      const jobs = dbEmbeddingJobs.map((job) => ({
+        name: 'upsert',
+        data: { ...job, action: 'upsert' } satisfies EmbeddingJobPayload,
+        opts: { attempts: 3, backoff: { type: 'exponential', delay: 5_000 } },
+      }));
+      this.embeddingQueue.addBulk(jobs).catch((err: Error) => {
+        this.logger.warn(`[RAG] Failed to enqueue ${jobs.length} embedding jobs: ${err.message}`);
+      });
+      this.logger.log(`[RAG] Enqueued ${jobs.length} lazy embedding jobs for tenant=${tenantId}`);
+    }
 
     this.logFireAndForget({
       tenantId,

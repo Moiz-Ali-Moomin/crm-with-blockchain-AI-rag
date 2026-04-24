@@ -52,7 +52,7 @@ export type SummarizeActivityDto = z.infer<typeof SummarizeActivitySchema>;
 
 export interface EmbeddingJobPayload {
   tenantId: string;
-  entityType: 'activity' | 'communication' | 'ticket';
+  entityType: string;
   entityId: string;
   /**
    * 'upsert' (default): generate + store embedding.
