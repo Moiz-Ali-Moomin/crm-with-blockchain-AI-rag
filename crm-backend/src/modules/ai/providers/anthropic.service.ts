@@ -17,7 +17,13 @@
 
 import { Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
-import { LLMInput, LLMProvider } from './llm.interface';
+import {
+  LLMInput,
+  AgentCapableLLMProvider,
+  AgentLLMInput,
+  AgentLLMResponse,
+  AgentContentBlock,
+} from './llm.interface';
 
 interface AnthropicConfig {
   apiKey: string;
@@ -26,7 +32,7 @@ interface AnthropicConfig {
   temperature?: number;
 }
 
-export class AnthropicLLMProvider implements LLMProvider {
+export class AnthropicLLMProvider implements AgentCapableLLMProvider {
   private readonly logger = new Logger(AnthropicLLMProvider.name);
   private readonly client: Anthropic;
   private readonly model: string;
@@ -45,12 +51,15 @@ export class AnthropicLLMProvider implements LLMProvider {
       ? `Context:\n${input.context}\n\nQuestion: ${input.prompt}`
       : input.prompt;
 
+    const history: { role: 'user' | 'assistant'; content: string }[] =
+      (input.history ?? []).map((m) => ({ role: m.role, content: m.content }));
+
     const response = await this.client.messages.create({
       model: this.model,
       max_tokens: this.maxTokens,
       temperature: this.temperature,
       ...(input.system ? { system: input.system } : {}),
-      messages: [{ role: 'user', content: userContent }],
+      messages: [...history, { role: 'user', content: userContent }],
     });
 
     const block = response.content[0];
@@ -60,5 +69,49 @@ export class AnthropicLLMProvider implements LLMProvider {
 
     this.logger.debug(`[LLM] Anthropic responded (model=${this.model}, tokens=${response.usage.output_tokens})`);
     return block.text;
+  }
+
+  async generateWithTools(input: AgentLLMInput): Promise<AgentLLMResponse> {
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: input.maxTokens ?? this.maxTokens,
+      temperature: this.temperature,
+      ...(input.system ? { system: input.system } : {}),
+      tools: input.tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.input_schema as Anthropic.Tool['input_schema'],
+      })),
+      messages: input.messages as Anthropic.MessageParam[],
+    });
+
+    const stopReason = (response.stop_reason ?? 'end_turn') as AgentLLMResponse['stopReason'];
+    const content: AgentContentBlock[] = [];
+
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        content.push({ type: 'text', text: block.text });
+      } else if (block.type === 'tool_use') {
+        content.push({
+          type: 'tool_use',
+          id: block.id,
+          name: block.name,
+          input: block.input as Record<string, unknown>,
+        });
+      }
+    }
+
+    this.logger.debug(
+      `[AgentLLM] stop_reason=${stopReason}, in=${response.usage.input_tokens}, out=${response.usage.output_tokens}`,
+    );
+
+    return {
+      stopReason,
+      content,
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      },
+    };
   }
 }

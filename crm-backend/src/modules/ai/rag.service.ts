@@ -30,6 +30,7 @@ import { Queue } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
 import { VectorSearchService, SemanticSearchResult } from './vector-search.service';
+import { ChatMessage } from './providers/llm.interface';
 import { AiLogRepository } from './repositories/ai-log.repository';
 import { RedisService } from '../../core/cache/redis.service';
 import { CACHE_KEYS, CACHE_TTL } from '../../core/cache/cache-keys';
@@ -49,6 +50,7 @@ export interface RagQueryParams {
   entityTypes?: ('activity' | 'communication' | 'ticket')[];
   topK?: number;
   threshold?: number;
+  history?: ChatMessage[];
 }
 
 export interface RagSource {
@@ -101,6 +103,7 @@ export class RagService {
       entityTypes = ['activity', 'communication', 'ticket'],
       topK = 8,
       threshold = 0.72,
+      history = [],
     } = params;
 
     // ── 0. Key guard — fail fast before any I/O ──────────────────────────────
@@ -126,7 +129,8 @@ export class RagService {
       .slice(0, 16);
 
     const cacheKey = CACHE_KEYS.aiSearchResults(tenantId, `rag:${paramHash}`);
-    const cached = await this.redis.get<RagResponse>(cacheKey);
+    // Conversational queries are never identical — skip cache when history is present
+    const cached = history.length === 0 ? await this.redis.get<RagResponse>(cacheKey) : null;
 
     if (cached) {
       this.businessMetrics.recordAiUsage({
@@ -182,6 +186,7 @@ export class RagService {
         system: hasContext ? RAG_SYSTEM_PROMPT : FALLBACK_SYSTEM_PROMPT,
         prompt: query,
         context: contextWindow,
+        history,
       }),
     );
 

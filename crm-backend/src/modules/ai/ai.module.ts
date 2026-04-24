@@ -8,7 +8,7 @@
  * └─────────────────────────────────────────────────────────────────────────────┘
  */
 
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -34,6 +34,7 @@ import { AiLogRepository } from './repositories/ai-log.repository';
 import { QUEUE_NAMES } from '../../core/queue/queue.constants';
 import { BlockchainModule } from '../blockchain/blockchain.module';
 import { DbFallbackService } from './db-fallback.service';
+import { McpModule } from '../mcp/mcp.module';
 
 // 🔥 same flag as CoreModule
 const isMongoEnabled = !!process.env.MONGO_URI;
@@ -53,6 +54,7 @@ const isMongoEnabled = !!process.env.MONGO_URI;
 
     BlockchainModule,
     ConfigModule,
+    forwardRef(() => McpModule),
   ],
 
   controllers: [AiController],

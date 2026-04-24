@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable, Logger, Optional, Inject, forwardRef } from '@nestjs/common';
 import { VectorSearchService } from './vector-search.service';
 import { CopilotService } from './copilot.service';
 import { RagService } from './rag.service';
@@ -13,15 +13,19 @@ import {
   RagQueryDto,
   VerifyDealWithAiDto,
 } from './ai.dto';
+import { AgentService } from '../mcp/agent.service';
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(
     private readonly vectorSearch: VectorSearchService,
     private readonly copilot: CopilotService,
     private readonly rag: RagService,
     private readonly blockchain: BlockchainService,
     private readonly prisma: PrismaService,
+    @Optional() @Inject(forwardRef(() => AgentService)) private readonly agent?: AgentService,
   ) {}
 
   semanticSearch(tenantId: string, dto: SemanticSearchDto) {
@@ -67,13 +71,34 @@ export class AiService {
     );
   }
 
-  ragQuery(tenantId: string, dto: RagQueryDto) {
+  async ragQuery(tenantId: string, userId: string, userRole: string, dto: RagQueryDto) {
+    // Route through AgentService when available. sessionId enables multi-turn memory via Redis.
+    // Legacy inline history still bypasses agent (no session) to avoid duplicate context.
+    if (this.agent && (dto.history.length === 0 || dto.sessionId)) {
+      try {
+        const result = await this.agent.run({ query: dto.query, tenantId, userId, userRole, sessionId: dto.sessionId });
+        return {
+          answer: result.answer,
+          sources: [],
+          confidence: 0,
+          fromCache: false,
+          agentMode: true,
+          iterations: result.iterations,
+          toolCallsMade: result.toolCallsMade,
+        };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`[AiService] AgentService failed, falling back to RAG: ${message}`);
+      }
+    }
+
     return this.rag.query({
       tenantId,
       query: dto.query,
       entityTypes: dto.entityTypes,
       topK: dto.topK,
       threshold: dto.threshold,
+      history: dto.history,
     });
   }
 

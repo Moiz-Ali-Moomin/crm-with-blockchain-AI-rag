@@ -1,5 +1,10 @@
 import { apiPost, apiGet } from './client';
 
+export interface ChatHistoryMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface RagQueryResult {
   answer: string;
   sources: { id: string; entityType: string; snippet: string; score: number }[];
@@ -17,8 +22,8 @@ export interface DealVerifyResult {
 }
 
 export const aiApi = {
-  query: (query: string) =>
-    apiPost<RagQueryResult>('/ai/query', { query }),
+  query: (query: string, history?: ChatHistoryMessage[]) =>
+    apiPost<RagQueryResult>('/ai/query', { query, history: history ?? [] }),
 
   search: (query: string, entityTypes?: string[]) =>
     apiPost<SemanticSearchResult>('/ai/search', { query, entityTypes }),

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Brain, Search, ShieldCheck, Send, Loader2, AlertCircle, CheckCircle2, XCircle, Sparkles } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { aiApi, RagQueryResult, SemanticSearchResult, DealVerifyResult } from '@/lib/api/ai.api';
+import { aiApi, RagQueryResult, SemanticSearchResult, DealVerifyResult, ChatHistoryMessage } from '@/lib/api/ai.api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -89,7 +89,8 @@ function ChatTab() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const { mutate, isPending } = useMutation({
-    mutationFn: (query: string) => aiApi.query(query),
+    mutationFn: ({ query, history }: { query: string; history: ChatHistoryMessage[] }) =>
+      aiApi.query(query, history),
     onSuccess: (data) => {
       setMessages((prev) => [
         ...prev,
@@ -111,9 +112,14 @@ function ChatTab() {
   function handleSend() {
     const q = input.trim();
     if (!q || isPending) return;
+    // Snapshot current messages as history before appending the new user turn
+    const history: ChatHistoryMessage[] = messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
     setMessages((prev) => [...prev, { role: 'user', content: q }]);
     setInput('');
-    mutate(q);
+    mutate({ query: q, history });
   }
 
   const suggestions = [

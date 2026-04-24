@@ -43,6 +43,7 @@ import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AiModule } from './modules/ai/ai.module';
+import { McpModule } from './modules/mcp/mcp.module';
 import { BlockchainModule } from './modules/blockchain/blockchain.module';
 import { EthereumPaymentModule } from './blockchain/blockchain.module';
 import { WalletsModule } from './modules/wallets/wallets.module';
@@ -160,6 +161,7 @@ import { TenantThrottlerGuard } from './common/guards/tenant-throttler.guard';
     BillingModule,
     AnalyticsModule,
     AiModule,
+    McpModule,
     BlockchainModule,
 
     // ── USDC Payment Rail (ethers.js provider + listener + USDC helper) ──────

@@ -67,6 +67,11 @@ export interface EmbeddingJobPayload {
 
 // ── RAG Query ──────────────────────────────────────────────────────────────────
 
+const ChatMessageSchema = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string().max(4000),
+});
+
 export const RagQuerySchema = z.object({
   query: z.string().min(1).max(800),
   entityTypes: z
@@ -75,6 +80,9 @@ export const RagQuerySchema = z.object({
     .default(['activity', 'communication', 'ticket']),
   topK: z.coerce.number().int().min(1).max(20).default(8),
   threshold: z.coerce.number().min(0).max(1).default(0.72),
+  history: z.array(ChatMessageSchema).max(20).optional().default([]),
+  /** Opaque session ID (UUID) for persistent multi-turn agent memory */
+  sessionId: z.string().uuid().optional(),
 });
 export type RagQueryDto = z.infer<typeof RagQuerySchema>;
 

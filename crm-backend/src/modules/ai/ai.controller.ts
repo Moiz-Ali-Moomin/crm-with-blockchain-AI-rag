@@ -1,5 +1,5 @@
-/**
- * AI Controller — /api/v1/ai
+﻿/**
+ * AI Controller â€” /api/v1/ai
  *
  * All endpoints require authentication (global JwtAuthGuard).
  * tenantId is extracted from the JWT via the @CurrentUser() decorator.
@@ -48,7 +48,7 @@ import {
 @Controller('ai')
 @UseGuards(RolesGuard)
 @Roles(UserRole.SALES_REP, UserRole.SALES_MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN)
-// AI calls are expensive — tighten rate limits beyond the global defaults
+// AI calls are expensive â€” tighten rate limits beyond the global defaults
 @Throttle({ short: { limit: 5, ttl: 60_000 }, long: { limit: 100, ttl: 3_600_000 } })
 export class AiController {
   constructor(private readonly aiService: AiService) {}
@@ -56,7 +56,7 @@ export class AiController {
   /**
    * POST /api/v1/ai/search
    * Semantic search across activities, communications, and tickets.
-   * Example: "customer complained about billing" → returns related tickets + comms.
+   * Example: "customer complained about billing" â†’ returns related tickets + comms.
    */
   @Post('search')
   @HttpCode(HttpStatus.OK)
@@ -124,7 +124,7 @@ export class AiController {
 
   /**
    * POST /api/v1/ai/query
-   * Full RAG pipeline: natural language → embedding → vector search → LLM answer.
+   * Full RAG pipeline: natural language â†’ embedding â†’ vector search â†’ LLM answer.
    * Query CRM data in plain English.
    * Examples:
    *   - "What happened in the last 3 interactions with Acme Corp?"
@@ -135,10 +135,10 @@ export class AiController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Query CRM data in natural language (full RAG pipeline)' })
   ragQuery(
-    @CurrentUser() user: { tenantId: string },
+    @CurrentUser() user: { tenantId: string; id: string; role: string },
     @Body(new ZodValidationPipe(RagQuerySchema)) dto: RagQueryDto,
   ) {
-    return this.aiService.ragQuery(user.tenantId, dto);
+    return this.aiService.ragQuery(user.tenantId, user.id, user.role, dto);
   }
 
   /**
@@ -166,3 +166,4 @@ export class AiController {
     return this.aiService.verifyDealWithAi(user.tenantId, dto);
   }
 }
+
