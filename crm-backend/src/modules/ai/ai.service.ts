@@ -14,6 +14,7 @@ import {
   VerifyDealWithAiDto,
 } from './ai.dto';
 import { AgentService } from '../mcp/agent.service';
+import { ChatMessage } from './providers/llm.interface';
 
 @Injectable()
 export class AiService {
@@ -98,7 +99,7 @@ export class AiService {
       entityTypes: dto.entityTypes,
       topK: dto.topK,
       threshold: dto.threshold,
-      history: dto.history,
+      history: dto.history as ChatMessage[],
     });
   }
 
