@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Brain, Search, ShieldCheck, Send, Loader2, AlertCircle, CheckCircle2, XCircle, Sparkles } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { aiApi, RagQueryResult, SemanticSearchResult, DealVerifyResult } from '@/lib/api/ai.api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,42 @@ function SourceChip({ entityType, snippet, score }: { entityType: string; snippe
       </span>
       <span className="line-clamp-2 flex-1 text-fg-secondary">{snippet}</span>
       <span className="shrink-0 text-fg-subtle">{Math.round(score * 100)}%</span>
+    </div>
+  );
+}
+
+// ─── Markdown renderer ────────────────────────────────────────────────────────
+
+function MarkdownContent({ content, className }: { content: string; className?: string }) {
+  return (
+    <div className={className}>
+    <ReactMarkdown
+      components={{
+        h1: ({ children }) => <h1 className="text-base font-semibold text-fg mt-3 mb-1 first:mt-0">{children}</h1>,
+        h2: ({ children }) => <h2 className="text-sm font-semibold text-fg mt-3 mb-1 first:mt-0">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-sm font-medium text-fg mt-2 mb-0.5 first:mt-0">{children}</h3>,
+        p:  ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+        ul: ({ children }) => <ul className="mb-2 space-y-0.5 pl-4 list-disc">{children}</ul>,
+        ol: ({ children }) => <ol className="mb-2 space-y-0.5 pl-4 list-decimal">{children}</ol>,
+        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+        strong: ({ children }) => <strong className="font-semibold text-fg">{children}</strong>,
+        em: ({ children }) => <em className="italic text-fg-secondary">{children}</em>,
+        code: ({ children }) => <code className="rounded bg-canvas-subtle px-1 py-0.5 font-mono text-xs text-indigo-600">{children}</code>,
+        pre: ({ children }) => <pre className="mb-2 overflow-x-auto rounded-lg bg-canvas-subtle p-3 text-xs font-mono">{children}</pre>,
+        blockquote: ({ children }) => <blockquote className="mb-2 border-l-2 border-indigo-400 pl-3 text-fg-secondary italic">{children}</blockquote>,
+        hr: () => <hr className="my-3 border-ui-border" />,
+        table: ({ children }) => (
+          <div className="mb-2 overflow-x-auto rounded-lg border border-ui-border">
+            <table className="w-full text-xs">{children}</table>
+          </div>
+        ),
+        thead: ({ children }) => <thead className="bg-canvas-subtle">{children}</thead>,
+        th: ({ children }) => <th className="px-3 py-2 text-left font-medium text-fg-secondary">{children}</th>,
+        td: ({ children }) => <td className="border-t border-ui-border px-3 py-2 text-fg-secondary">{children}</td>,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
     </div>
   );
 }
@@ -98,12 +135,14 @@ function ChatTab() {
               </div>
             )}
             <div className={`max-w-[75%] space-y-2 ${msg.role === 'user' ? 'items-end' : 'items-start'} flex flex-col`}>
-              <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+              <div className={`rounded-2xl px-4 py-2.5 text-sm ${
                 msg.role === 'user'
-                  ? 'bg-indigo-600 text-white'
+                  ? 'bg-indigo-600 text-white leading-relaxed'
                   : 'bg-canvas border border-ui-border text-fg'
               }`}>
-                {msg.content}
+                {msg.role === 'user'
+                  ? msg.content
+                  : <MarkdownContent content={msg.content} />}
               </div>
               {msg.sources && msg.sources.length > 0 && (
                 <div className="w-full space-y-1">
@@ -337,8 +376,8 @@ function VerifyTab() {
                 <Sparkles size={14} className="text-indigo-500" /> AI Analysis
               </CardTitle>
             </CardHeader>
-            <CardContent className="text-sm text-fg-secondary leading-relaxed">
-              {result.answer}
+            <CardContent className="text-sm text-fg-secondary">
+              <MarkdownContent content={result.answer} />
             </CardContent>
           </Card>
 
@@ -377,7 +416,7 @@ export default function AiCopilotPage() {
         </div>
         <div>
           <h1 className="text-lg font-semibold text-fg">AI Copilot</h1>
-          <p className="text-xs text-fg-muted">Powered by GPT-4o + pgvector RAG + Blockchain verification</p>
+          <p className="text-xs text-fg-muted">Powered by Claude + pgvector RAG + Blockchain verification</p>
         </div>
       </div>
 
