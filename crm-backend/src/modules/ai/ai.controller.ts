@@ -50,8 +50,9 @@ import {
 @Controller('ai')
 @UseGuards(RolesGuard)
 @Roles(UserRole.SALES_REP, UserRole.SALES_MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN)
-// AI calls are expensive â€” tighten rate limits beyond the global defaults
-@Throttle({ short: { limit: 5, ttl: 60_000 }, long: { limit: 100, ttl: 3_600_000 } })
+// AI calls are expensive — controller-level limits tighten beyond the global defaults.
+// short: 30/min allows a natural back-and-forth conversation; long: 300/hr prevents abuse.
+@Throttle({ short: { limit: 30, ttl: 60_000 }, long: { limit: 300, ttl: 3_600_000 } })
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 

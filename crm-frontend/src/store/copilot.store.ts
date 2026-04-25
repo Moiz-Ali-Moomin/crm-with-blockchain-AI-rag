@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import axios from 'axios';
 import { apiPost } from '@/lib/api/client';
 
 export interface CopilotSource {
@@ -72,25 +73,60 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
 
     try {
       const { sessionId, context } = get();
-      const res = await apiPost<{ answer: string; sources?: CopilotSource[] }>(
+
+      // Raw shape the backend actually returns (RagSource field names)
+      type RawSource = {
+        entityType: string;
+        entityId: string;
+        similarity: number;
+        excerpt: string;
+      };
+      const res = await apiPost<{ answer: string; sources?: RawSource[] }>(
         '/ai/copilot',
         { query: trimmed, context, sessionId },
       );
+
+      // Map backend field names → frontend CopilotSource interface
+      const sources: CopilotSource[] = (res.sources ?? []).map((s) => ({
+        id:         s.entityId,
+        entityType: s.entityType,
+        snippet:    s.excerpt,
+        score:      s.similarity,
+      }));
 
       const assistantMsg: CopilotMessage = {
         id: makeId(),
         role: 'assistant',
         content: res.answer,
-        sources: res.sources ?? [],
+        sources,
         timestamp: Date.now(),
       };
 
       set((s) => ({ messages: [...s.messages, assistantMsg], isLoading: false }));
-    } catch {
+    } catch (err) {
+      console.error('[CopilotStore] sendMessage failed:', err);
+
+      let content = 'Sorry, something went wrong. Please try again.';
+
+      if (axios.isAxiosError(err)) {
+        const status = err.response?.status;
+        if (status === 429) {
+          const retryAfter = err.response?.headers?.['retry-after'];
+          const waitSecs = retryAfter ? parseInt(retryAfter, 10) : 60;
+          content = `You've sent too many messages. Please wait ${waitSecs} second${waitSecs !== 1 ? 's' : ''} before trying again.`;
+        } else if (status === 401) {
+          content = 'Your session has expired. Please refresh the page and log in again.';
+        } else if (status === 403) {
+          content = "You don't have permission to use the AI Copilot.";
+        } else if (status && status >= 500) {
+          content = 'The AI service is temporarily unavailable. Please try again in a moment.';
+        }
+      }
+
       const errorMsg: CopilotMessage = {
         id: makeId(),
         role: 'assistant',
-        content: 'Sorry, something went wrong. Please try again.',
+        content,
         timestamp: Date.now(),
       };
       set((s) => ({ messages: [...s.messages, errorMsg], isLoading: false }));
