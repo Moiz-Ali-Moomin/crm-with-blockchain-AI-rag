@@ -75,7 +75,8 @@ const RPC_ENV: Record<string, string> = {
 const tracer = trace.getTracer('crm-backend');
 
 @Injectable()
-@Processor(QUEUE_NAMES.RECONCILIATION, { concurrency: 1 })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+@Processor(QUEUE_NAMES.RECONCILIATION, { concurrency: 1 } as any)
 export class ReconciliationWorker extends WorkerHost {
   private readonly logger = new Logger(ReconciliationWorker.name);
   private readonly providerCache = new Map<string, ethers.JsonRpcProvider>();

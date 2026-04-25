@@ -25,7 +25,8 @@ import { BlockchainService } from '../../modules/blockchain/blockchain.service';
 import { BlockchainRepository } from '../../modules/blockchain/blockchain.repository';
 import { BlockchainJobPayload } from '../../modules/blockchain/blockchain.dto';
 
-@Processor(QUEUE_NAMES.BLOCKCHAIN, { concurrency: 1 })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+@Processor(QUEUE_NAMES.BLOCKCHAIN, { concurrency: 1 } as any)
 export class BlockchainWorker extends WorkerHost {
   private readonly logger = new Logger(BlockchainWorker.name);
 

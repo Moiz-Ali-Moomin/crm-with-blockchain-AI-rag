@@ -4,13 +4,13 @@ import { useAuthStore } from '@/store/auth.store';
 
 export function useSocket(): Socket | null {
   const socketRef = useRef<Socket | null>(null);
-  const { accessToken, isAuthenticated } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
 
   useEffect(() => {
-    if (!isAuthenticated || !accessToken) return;
+    if (!isAuthenticated) return;
 
     const socket = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001', {
-      auth: { token: accessToken },
+      withCredentials: true,
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 5,
@@ -35,7 +35,7 @@ export function useSocket(): Socket | null {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [isAuthenticated, accessToken]);
+  }, [isAuthenticated]);
 
   return socketRef.current;
 }

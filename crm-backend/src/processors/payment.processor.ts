@@ -49,7 +49,8 @@ const tracer = trace.getTracer('crm-backend');
 const AMOUNT_TOLERANCE = 1n;
 
 @Injectable()
-@Processor(QUEUE_NAMES.BLOCKCHAIN_EVENTS, { concurrency: 5 })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+@Processor(QUEUE_NAMES.BLOCKCHAIN_EVENTS, { concurrency: 5 } as any)
 export class PaymentProcessor extends WorkerHost {
   private readonly logger = new Logger(PaymentProcessor.name);
 

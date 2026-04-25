@@ -26,9 +26,12 @@ export interface User {
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
+  /** True once Zustand has rehydrated persisted state from localStorage. */
+  _hasHydrated: boolean;
   /** Set the current user (called after login or from the server-side initial data). */
   setAuth: (user: User) => void;
   logout: () => void;
+  _setHasHydrated: (value: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -36,10 +39,13 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       isAuthenticated: false,
+      _hasHydrated: false,
 
       setAuth: (user) => set({ user, isAuthenticated: true }),
 
       logout: () => set({ user: null, isAuthenticated: false }),
+
+      _setHasHydrated: (value) => set({ _hasHydrated: value }),
     }),
     {
       name: 'crm-auth',
@@ -50,6 +56,9 @@ export const useAuthStore = create<AuthState>()(
       ),
       // Persist user profile for instant rendering; auth truth lives in the httpOnly cookie.
       partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated }),
+      onRehydrateStorage: () => (state) => {
+        state?._setHasHydrated(true);
+      },
     }
   )
 );

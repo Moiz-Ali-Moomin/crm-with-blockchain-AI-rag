@@ -20,7 +20,8 @@ import { QUEUE_NAMES } from '../../core/queue/queue.constants';
 import { DlqEntry } from '../services/dlq-publisher.service';
 
 @Injectable()
-@Processor(QUEUE_NAMES.DLQ, { concurrency: 1 })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+@Processor(QUEUE_NAMES.DLQ, { concurrency: 1 } as any)
 export class DlqWorker extends WorkerHost {
   private readonly logger = new Logger(DlqWorker.name);
 

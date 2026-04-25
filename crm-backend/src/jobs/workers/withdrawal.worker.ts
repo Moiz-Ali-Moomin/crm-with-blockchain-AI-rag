@@ -50,7 +50,8 @@ const IDEMPOTENCY_TTL_SECONDS = 60 * 60 * 24; // 24 hours
 const tracer = trace.getTracer('crm-backend');
 
 @Injectable()
-@Processor(QUEUE_NAMES.WITHDRAWALS, { concurrency: 3 })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+@Processor(QUEUE_NAMES.WITHDRAWALS, { concurrency: 3 } as any)
 export class WithdrawalWorker extends WorkerHost {
   private readonly logger = new Logger(WithdrawalWorker.name);
 

@@ -60,7 +60,8 @@ const POLL_DELAY_MS = (confirmations: number, target: number): number => {
 };
 
 @Injectable()
-@Processor(QUEUE_NAMES.TRANSACTION_CONFIRMATION, { concurrency: 10 })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+@Processor(QUEUE_NAMES.TRANSACTION_CONFIRMATION, { concurrency: 10 } as any)
 export class TransactionConfirmationWorker extends WorkerHost {
   private readonly logger = new Logger(TransactionConfirmationWorker.name);
   private readonly providerCache = new Map<string, ethers.JsonRpcProvider>();

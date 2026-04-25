@@ -31,7 +31,8 @@ import { extractTraceContext } from '../../tracing';
 const tracer = trace.getTracer('crm-backend');
 
 @Injectable()
-@Processor(QUEUE_NAMES.BLOCKCHAIN_EVENTS, { concurrency: 5 })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+@Processor(QUEUE_NAMES.BLOCKCHAIN_EVENTS, { concurrency: 5 } as any)
 export class BlockchainEventsWorker extends WorkerHost {
   private readonly logger = new Logger(BlockchainEventsWorker.name);
 

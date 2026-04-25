@@ -44,7 +44,8 @@ export interface BalanceSyncJobPayload {
 }
 
 @Injectable()
-@Processor(QUEUE_NAMES.PAYMENT_PROCESSING, { concurrency: 3 })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+@Processor(QUEUE_NAMES.PAYMENT_PROCESSING, { concurrency: 3 } as any)
 export class PaymentProcessingWorker extends WorkerHost {
   private readonly logger = new Logger(PaymentProcessingWorker.name);
 
