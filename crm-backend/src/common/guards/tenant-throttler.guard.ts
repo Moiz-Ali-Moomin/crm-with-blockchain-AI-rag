@@ -1,20 +1,28 @@
 /**
  * TenantThrottlerGuard
  *
- * Extends NestJS ThrottlerGuard to key rate limits by tenantId instead of IP.
- * This prevents a single tenant from consuming all capacity on a shared IP
- * (common when clients sit behind a corporate proxy or API gateway).
+ * Two distinct limiting strategies, chosen by path:
  *
- * Additionally applies a per-tier sliding window check using SlidingWindowRateLimiter:
- *   free      → 30 req/min
- *   starter   → 100 req/min
- *   pro       → 500 req/min
- *   enterprise→ 2000 req/min
+ *   Non-AI paths  →  NestJS ThrottlerGuard (fixed window, per tenant key)
+ *                    + per-tenant sliding window (tier-based RPM)
  *
- * Falls back to IP-based keying for unauthenticated requests (e.g. /auth/login).
+ *   AI paths      →  Concurrency-based limit only (RPM is wrong for 20–60 s calls)
+ *                    ADMIN / SUPER_ADMIN bypass this limit entirely.
+ *                    Other roles get a per-user slot cap:
+ *                      free: 1  starter: 2  pro: 3  enterprise: 5
+ *                    Returns 503 (capacity) not 429 (rate) when at limit.
  *
- * Registration: replace ThrottlerGuard in AppModule providers array:
- *   { provide: APP_GUARD, useClass: TenantThrottlerGuard }
+ * Why concurrency instead of RPM for AI?
+ *   A 60-req/min limit sounds generous but fails immediately under concurrency:
+ *   fire 5 requests at t=0 before any response arrives → 5 increments recorded
+ *   → blocked for the rest of the window even though only 1–2 calls can realistically
+ *   complete per minute at 20–60 s each. Concurrency tracks *in-flight* requests,
+ *   which is the actual resource being consumed.
+ *
+ * Slot lifecycle:
+ *   guard.canActivate  → tryAcquire → marks req[AI_CONCURRENCY_USER_KEY]
+ *   AiConcurrencyInterceptor.finalize → release (success, error, or cancellation)
+ *   Safety TTL (120 s) → auto-expires slot if server dies before release
  */
 
 import {
@@ -22,12 +30,18 @@ import {
   ExecutionContext,
   HttpException,
   HttpStatus,
-  Inject,
+  Logger,
 } from '@nestjs/common';
-import { ThrottlerGuard, InjectThrottlerOptions, InjectThrottlerStorage } from '@nestjs/throttler';
+import {
+  ThrottlerGuard,
+  InjectThrottlerOptions,
+  InjectThrottlerStorage,
+} from '@nestjs/throttler';
 import { Reflector } from '@nestjs/core';
 import { Request, Response } from 'express';
 import { SlidingWindowRateLimiter } from '../rate-limit/sliding-window.service';
+import { AiConcurrencyService } from '../rate-limit/ai-concurrency.service';
+import { AI_CONCURRENCY_USER_KEY } from '../interceptors/ai-concurrency.interceptor';
 
 type TenantTier = 'free' | 'starter' | 'pro' | 'enterprise';
 
@@ -38,18 +52,17 @@ const TIER_LIMITS: Record<TenantTier, { rpm: number }> = {
   enterprise: { rpm: 2_000 },
 };
 
-// AI endpoints are expensive and slow (20-60 s each). Apply a stricter
-// per-user limit on top of the per-tenant limit so one heavy user cannot
-// exhaust the tenant's shared quota. These limits are generous relative to
-// the actual throughput possible (max ~3 req/min at 20 s/call).
-const AI_USER_RPM: Record<TenantTier, number> = {
-  free:       5,
-  starter:    10,
-  pro:        20,
-  enterprise: 60,
+const AI_MAX_CONCURRENT: Record<TenantTier, number> = {
+  free:       1,
+  starter:    2,
+  pro:        3,
+  enterprise: 5,
 };
 
-// JWT has no `tier` claim — derive tier from role so admins aren't capped at free limits.
+// 2× the worst-case AI call duration so a crashed server doesn't permanently
+// block the user. The interceptor releases proactively well before this fires.
+const AI_SLOT_SAFETY_TTL_MS = 120_000;
+
 function tierFromRole(role?: string): TenantTier {
   switch (role) {
     case 'SUPER_ADMIN':
@@ -64,13 +77,24 @@ function tierFromRole(role?: string): TenantTier {
   }
 }
 
+type RequestUser = {
+  id?: string;
+  sub?: string;
+  tenantId?: string;
+  tier?: TenantTier;
+  role?: string;
+};
+
 @Injectable()
 export class TenantThrottlerGuard extends ThrottlerGuard {
+  private readonly logger = new Logger(TenantThrottlerGuard.name);
+
   constructor(
     @InjectThrottlerOptions() options: any,
     @InjectThrottlerStorage() storage: any,
     reflector: Reflector,
     private readonly slidingWindow: SlidingWindowRateLimiter,
+    private readonly aiConcurrency: AiConcurrencyService,
   ) {
     super(options, storage, reflector);
   }
@@ -87,36 +111,110 @@ export class TenantThrottlerGuard extends ThrottlerGuard {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<Request>();
-
-    // Health and metrics endpoints must never be throttled — Docker and Prometheus
-    // hit them frequently from internal IPs and share the Redis bucket across slots.
+    const res = context.switchToHttp().getResponse<Response>();
     const path: string = req.path ?? '';
+
     if (path.includes('/health/') || path.endsWith('/health') || path.includes('/metrics')) {
       return true;
     }
 
+    const user = (req as any).user as RequestUser | undefined;
+
+    if (path.includes('/ai/')) {
+      return this.handleAiRequest(req, res, path, user);
+    }
+
+    return this.handleStandardRequest(context, res, path, user);
+  }
+
+  // ── AI paths: concurrency-based limiting only ──────────────────────────────
+
+  private async handleAiRequest(
+    req: Request,
+    res: Response,
+    path: string,
+    user: RequestUser | undefined,
+  ): Promise<boolean> {
+    if (!user?.tenantId) return true;
+
+    const userId = user.id ?? user.sub;
+    const tier   = user.tier ?? tierFromRole(user.role);
+    const role   = user.role;
+
+    // ADMIN/SUPER_ADMIN: bypass entirely — trusted users, no capacity concerns
+    if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
+      this.logger.debug(JSON.stringify({
+        userId, tenantId: user.tenantId, tier, endpoint: path,
+        limitType: 'ai-user', allowed: true, remaining: 'unlimited',
+      }));
+      return true;
+    }
+
+    if (!userId) return true;
+
+    const maxConcurrent = AI_MAX_CONCURRENT[tier] ?? AI_MAX_CONCURRENT.free;
+    const acquired = await this.aiConcurrency.tryAcquire(userId, maxConcurrent, AI_SLOT_SAFETY_TTL_MS);
+    const currentCount = acquired
+      ? await this.aiConcurrency.getCount(userId)
+      : maxConcurrent;
+
+    this.logger.debug(JSON.stringify({
+      userId, tenantId: user.tenantId, tier, endpoint: path,
+      limitType: 'ai-user', allowed: acquired,
+      concurrent: currentCount, maxConcurrent,
+    }));
+
+    if (!acquired) {
+      res.setHeader('X-AI-Concurrent-Limit', maxConcurrent);
+      res.setHeader('X-AI-Concurrent-Remaining', 0);
+      res.setHeader('Retry-After', '30');
+
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+          error: 'Service Unavailable',
+          message: `AI capacity reached: max ${maxConcurrent} concurrent AI request(s) per user. Please wait for an active request to complete.`,
+          retryAfterSeconds: 30,
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    // Signal the interceptor to release this slot when the response finishes
+    (req as any)[AI_CONCURRENCY_USER_KEY] = userId;
+    res.setHeader('X-AI-Concurrent-Limit', maxConcurrent);
+    res.setHeader('X-AI-Concurrent-Remaining', maxConcurrent - currentCount);
+    return true;
+  }
+
+  // ── Standard paths: NestJS fixed window + per-tenant sliding window ────────
+
+  private async handleStandardRequest(
+    context: ExecutionContext,
+    res: Response,
+    path: string,
+    user: RequestUser | undefined,
+  ): Promise<boolean> {
     const baseAllowed = await super.canActivate(context);
     if (!baseAllowed) return false;
 
-    const res = context.switchToHttp().getResponse<Response>();
-    const user = (req as any).user as {
-      id?: string;
-      tenantId?: string;
-      tier?: TenantTier;
-      role?: string;
-    } | undefined;
-
     if (!user?.tenantId) return true;
 
-    const tier = user.tier ?? tierFromRole(user.role);
-    const { rpm } = TIER_LIMITS[tier] ?? TIER_LIMITS.free;
+    const tier      = user.tier ?? tierFromRole(user.role);
+    const { rpm }   = TIER_LIMITS[tier] ?? TIER_LIMITS.free;
+    const userId    = user.id ?? user.sub;
 
-    // ── Per-tenant sliding window ──────────────────────────────────────────────
     const tenantResult = await this.slidingWindow.check(
       `swrl:tenant:${user.tenantId}:rpm`,
       rpm,
       60_000,
     );
+
+    this.logger.debug(JSON.stringify({
+      userId, tenantId: user.tenantId, tier, endpoint: path,
+      limitType: 'tenant', allowed: tenantResult.allowed,
+      remaining: tenantResult.remaining,
+    }));
 
     if (!tenantResult.allowed) {
       res.setHeader('X-RateLimit-Limit', rpm);
@@ -136,39 +234,6 @@ export class TenantThrottlerGuard extends ThrottlerGuard {
 
     res.setHeader('X-RateLimit-Limit', rpm);
     res.setHeader('X-RateLimit-Remaining', tenantResult.remaining);
-
-    // ── Per-user AI sliding window ─────────────────────────────────────────────
-    // AI calls are expensive (20-60 s each). Without a per-user check, a single
-    // user can exhaust the entire tenant's shared bucket. This secondary check
-    // uses the JWT subject (user.id ?? user.sub) to isolate each user's AI quota.
-    // Passport-JWT populates `sub` from the token; some strategies also copy it
-    // to `id`. We accept either so the guard works regardless of JWT shape.
-    const userId = user.id ?? (user as any).sub;
-    if (userId && path.includes('/ai/')) {
-      const aiRpm = AI_USER_RPM[tier] ?? AI_USER_RPM.free;
-      const aiResult = await this.slidingWindow.check(
-        `swrl:user:${userId}:ai:rpm`,
-        aiRpm,
-        60_000,
-      );
-
-      if (!aiResult.allowed) {
-        res.setHeader('X-RateLimit-Limit', aiRpm);
-        res.setHeader('X-RateLimit-Remaining', 0);
-        res.setHeader('X-RateLimit-Reset', Math.ceil(Date.now() / 1000) + 60);
-        res.setHeader('Retry-After', '60');
-
-        throw new HttpException(
-          {
-            statusCode: HttpStatus.TOO_MANY_REQUESTS,
-            error: 'Too Many Requests',
-            message: `AI rate limit exceeded: ${aiRpm} req/min per user.`,
-          },
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
-      }
-    }
-
     return true;
   }
 }

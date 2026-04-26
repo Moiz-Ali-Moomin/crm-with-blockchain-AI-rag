@@ -4,8 +4,6 @@
  * All endpoints require authentication (global JwtAuthGuard).
  * tenantId is extracted from the JWT via the @CurrentUser() decorator.
  *
- * Rate limiting note: AI endpoints are expensive. Consider adding
- * @Throttle({ short: { limit: 5, ttl: 60000 } }) per org plan.
  */
 
 import {
@@ -19,7 +17,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { UserRole } from '@prisma/client';
 import { AiService } from './ai.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -50,9 +47,6 @@ import {
 @Controller('ai')
 @UseGuards(RolesGuard)
 @Roles(UserRole.SALES_REP, UserRole.SALES_MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN)
-// AI calls are expensive — controller-level limits override the global 1-second bucket.
-// short: 60/min (1/s average) supports fluid chat without bursting; long: 500/hr prevents abuse.
-@Throttle({ short: { limit: 60, ttl: 60_000 }, long: { limit: 500, ttl: 3_600_000 } })
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 

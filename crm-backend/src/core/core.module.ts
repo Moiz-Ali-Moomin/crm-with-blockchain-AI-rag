@@ -39,6 +39,7 @@ import { SagaStateStore } from './saga/saga-state-store.service';
 import { BusinessMetricsService } from './metrics/business-metrics.service';
 import { MetricsController } from './metrics/metrics.controller';
 import { SlidingWindowRateLimiter } from '../common/rate-limit/sliding-window.service';
+import { AiConcurrencyService } from '../common/rate-limit/ai-concurrency.service';
 import { IdempotencyMiddleware } from '../common/middleware/idempotency.middleware';
 import { LeaderElectionService } from './leader/leader-election.service';
 
@@ -94,6 +95,7 @@ const isMongoEnabled = !!process.env.MONGO_URI;
     SagaStateStore,
     BusinessMetricsService,
     SlidingWindowRateLimiter,
+    AiConcurrencyService,
     IdempotencyMiddleware,
     LeaderElectionService,
 
@@ -118,6 +120,7 @@ const isMongoEnabled = !!process.env.MONGO_URI;
     SagaStateStore,
     BusinessMetricsService,
     SlidingWindowRateLimiter,
+    AiConcurrencyService,
     IdempotencyMiddleware,
     LeaderElectionService,
 

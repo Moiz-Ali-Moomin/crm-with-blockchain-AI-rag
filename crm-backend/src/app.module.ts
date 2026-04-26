@@ -8,7 +8,7 @@
  */
 
 import { Module, MiddlewareConsumer, NestModule, RequestMethod } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { RedisThrottlerStorage } from './common/rate-limit/redis-throttler.storage';
@@ -57,6 +57,7 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { TenantContextMiddleware } from './common/middleware/tenant-context.middleware';
 import { IdempotencyMiddleware } from './common/middleware/idempotency.middleware';
 import { TenantThrottlerGuard } from './common/guards/tenant-throttler.guard';
+import { AiConcurrencyInterceptor } from './common/interceptors/ai-concurrency.interceptor';
 
 @Module({
   imports: [
@@ -182,10 +183,11 @@ import { TenantThrottlerGuard } from './common/guards/tenant-throttler.guard';
     HealthModule,
   ],
   providers: [
-    // Apply JwtAuthGuard globally — all routes protected unless @Public() is set
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    // Tenant-aware throttler (sliding window per tier) replaces plain ThrottlerGuard
     { provide: APP_GUARD, useClass: TenantThrottlerGuard },
+    // Releases the AI concurrency slot after the handler finishes (success or error).
+    // No-op for non-AI requests (only activates when the guard sets the slot key).
+    { provide: APP_INTERCEPTOR, useClass: AiConcurrencyInterceptor },
   ],
 })
 export class AppModule implements NestModule {
