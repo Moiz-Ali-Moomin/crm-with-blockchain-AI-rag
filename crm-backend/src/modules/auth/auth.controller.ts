@@ -83,9 +83,9 @@ export class AuthController {
 
   @Get('me')
   @ApiBearerAuth('JWT')
-  @ApiOperation({ summary: 'Return the authenticated user from the JWT payload' })
-  me(@CurrentUser() user: { id: string; email: string; tenantId: string; role: string }) {
-    return user;
+  @ApiOperation({ summary: 'Return the full authenticated user profile from the database' })
+  me(@CurrentUser('id') userId: string) {
+    return this.authService.getMe(userId);
   }
 
   @Post('logout')

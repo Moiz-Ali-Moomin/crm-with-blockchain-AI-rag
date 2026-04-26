@@ -175,8 +175,13 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
   const unreadCount = unreadData?.count ?? 0;
   const pageTitle   = resolvePageTitle(pathname);
   const section     = resolveSection(pathname);
-  const initials    = user
-    ? (`${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`).toUpperCase() || 'U'
+  const displayName = user
+    ? (user.firstName || user.lastName)
+      ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
+      : user.email
+    : '';
+  const initials = user
+    ? (user.firstName?.[0] ?? user.email?.[0] ?? 'U').toUpperCase()
     : 'U';
 
   const handleLogout = async () => {
@@ -300,7 +305,7 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
 
               <div className="hidden min-w-0 sm:block">
                 <p className="truncate text-[12px] font-semibold text-fg-secondary leading-tight">
-                  {user?.firstName} {user?.lastName}
+                  {displayName}
                 </p>
                 <p className="truncate text-[10px] text-fg-subtle leading-tight">
                   {user?.role ? parseEnumLabel(user.role) : 'User'}
@@ -329,7 +334,7 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
                 </div>
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <p className="truncate text-[13px] font-semibold text-fg">
-                    {user?.firstName} {user?.lastName}
+                    {displayName}
                   </p>
                   <p className="truncate text-[11px] text-fg-muted">{user?.email}</p>
                   <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-blue-600">

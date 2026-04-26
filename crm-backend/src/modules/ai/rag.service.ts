@@ -40,6 +40,7 @@ import { AiCostControlService, AiTier } from './cost-control.service';
 import { BusinessMetricsService } from '../../core/metrics/business-metrics.service';
 import { LLMProvider, LLM_PROVIDER } from './providers/llm.interface';
 import { DbFallbackService } from './db-fallback.service';
+import { ThrottledApiQueue } from './throttled-api-queue.service';
 import { QUEUE_NAMES } from '../../core/queue/queue.constants';
 import { EmbeddingJobPayload } from './ai.dto';
 
@@ -90,6 +91,7 @@ export class RagService {
     private readonly costControl: AiCostControlService,
     private readonly businessMetrics: BusinessMetricsService,
     private readonly dbFallback: DbFallbackService,
+    private readonly throttledApi: ThrottledApiQueue,
     @Inject(LLM_PROVIDER) private readonly llmProvider: LLMProvider,
     @InjectQueue(QUEUE_NAMES.AI_EMBEDDING) private readonly embeddingQueue: Queue<EmbeddingJobPayload>,
     @Optional() private readonly aiLogRepo?: AiLogRepository,
@@ -178,16 +180,25 @@ export class RagService {
       }
     }
 
-    // ── 4. LLM call — protected by circuit breaker ───────────────────────────
+    // ── 4. LLM call — sequential via ThrottledApiQueue (300 ms gap after embed)
+    //    Circuit breaker wraps the throttled call so open-circuit fast-fails
+    //    without consuming a queue slot.
+    //    cacheKey: reuse paramHash for stateless queries; omit for conversational
+    //    turns (history present) since every turn is unique.
     const start = Date.now();
+    const llmCacheKey = history.length === 0 ? `${paramHash}:${hasContext ? 'ctx' : 'fb'}` : undefined;
 
     const answer = await this.circuitBreaker.execute('llm', () =>
-      this.llmProvider.generate({
-        system: hasContext ? RAG_SYSTEM_PROMPT : FALLBACK_SYSTEM_PROMPT,
-        prompt: query,
-        context: contextWindow,
-        history,
-      }),
+      this.throttledApi.llm(
+        () =>
+          this.llmProvider.generate({
+            system: hasContext ? RAG_SYSTEM_PROMPT : FALLBACK_SYSTEM_PROMPT,
+            prompt: query,
+            context: contextWindow,
+            history,
+          }),
+        llmCacheKey,
+      ),
     );
 
     const latencyMs = Date.now() - start;
@@ -232,17 +243,19 @@ export class RagService {
     // ── 7. Cache + audit ─────────────────────────────────────────────────────
     await this.redis.set(cacheKey, result, CACHE_TTL.AI_SEARCH);
 
-    // ── 8. Lazy embedding — store DB-fallback records so next query hits pgvector
+    // ── 8. Lazy embedding — store DB-fallback records so next query hits pgvector.
+    //    Jobs are added one-by-one via a sequential for-of loop so BullMQ never
+    //    receives a burst of add() calls, preventing concurrent embedding API calls.
     if (dbEmbeddingJobs.length > 0) {
-      const jobs = dbEmbeddingJobs.map((job) => ({
-        name: 'upsert',
-        data: { ...job, action: 'upsert' } satisfies EmbeddingJobPayload,
-        opts: { attempts: 3, backoff: { type: 'exponential', delay: 5_000 } },
-      }));
-      this.embeddingQueue.addBulk(jobs).catch((err: Error) => {
-        this.logger.warn(`[RAG] Failed to enqueue ${jobs.length} embedding jobs: ${err.message}`);
+      const opts = { attempts: 3, backoff: { type: 'exponential', delay: 5_000 } };
+      void (async () => {
+        for (const job of dbEmbeddingJobs) {
+          await this.embeddingQueue.add('upsert', { ...job, action: 'upsert' } satisfies EmbeddingJobPayload, opts);
+        }
+      })().catch((err: Error) => {
+        this.logger.warn(`[RAG] Failed to enqueue embedding jobs: ${err.message}`);
       });
-      this.logger.log(`[RAG] Enqueued ${jobs.length} lazy embedding jobs for tenant=${tenantId}`);
+      this.logger.log(`[RAG] Enqueuing ${dbEmbeddingJobs.length} lazy embedding jobs sequentially for tenant=${tenantId}`);
     }
 
     this.logFireAndForget({

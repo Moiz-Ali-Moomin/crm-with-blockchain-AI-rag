@@ -14,12 +14,13 @@ export const InviteUserSchema = z.object({
   email: z.string().email(),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
-  role: z
-    .enum(['ADMIN', 'SALES_MANAGER', 'SALES_REP', 'SUPPORT_AGENT', 'VIEWER'])
-    .default('SALES_REP'),
+  // Role is intentionally excluded — the backend always assigns SALES_REP.
+  // Use PATCH /:id/role (SUPER_ADMIN only for ADMIN) to elevate after invite.
   jobTitle: z.string().optional(),
 });
 
+// ADMIN is included so SUPER_ADMIN can promote users; the service enforces that
+// only SUPER_ADMIN may assign ADMIN — this enum is a structural validation only.
 export const UpdateRoleSchema = z.object({
   role: z.enum(['ADMIN', 'SALES_MANAGER', 'SALES_REP', 'SUPPORT_AGENT', 'VIEWER']),
 });
@@ -41,3 +42,4 @@ export type InviteUserDto = z.infer<typeof InviteUserSchema>;
 export type UpdateRoleDto = z.infer<typeof UpdateRoleSchema>;
 export type ChangePasswordDto = z.infer<typeof ChangePasswordSchema>;
 export type FilterUsersDto = z.infer<typeof FilterUsersSchema>;
+

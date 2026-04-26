@@ -90,7 +90,9 @@ export class UsersService {
       email: dto.email,
       firstName: dto.firstName,
       lastName: dto.lastName,
-      role: dto.role as UserRole,
+      // Role is never derived from client input — always SALES_REP on creation.
+      // Use PATCH /:id/role to elevate after invite (SUPER_ADMIN required for ADMIN).
+      role: UserRole.SALES_REP,
       jobTitle: dto.jobTitle,
       passwordHash,
       status: 'INVITED',
@@ -126,6 +128,12 @@ export class UsersService {
     // Only ADMIN and SUPER_ADMIN can change roles
     if (actor !== UserRole.ADMIN && actor !== UserRole.SUPER_ADMIN) {
       throw new ForbiddenError('Only admins can update user roles');
+    }
+
+    // ADMIN role can only be assigned by SUPER_ADMIN — explicit guard to prevent
+    // privilege escalation even if the role-hierarchy check below were misconfigured.
+    if (targetRole === UserRole.ADMIN && actor !== UserRole.SUPER_ADMIN) {
+      throw new ForbiddenError('Only SUPER_ADMIN can assign the ADMIN role');
     }
 
     // Actor cannot assign a role higher than or equal to their own (except SUPER_ADMIN)

@@ -6,6 +6,8 @@ import { ActivitiesRepository } from './activities.repository';
 import { WsService, WS_EVENTS } from '../../core/websocket/ws.service';
 import { QUEUE_NAMES, QUEUE_JOB_OPTIONS, embeddingJobOptions } from '../../core/queue/queue.constants';
 import { CreateActivityDto, UpdateActivityDto, FilterActivityDto, TimelineQueryDto } from './activities.dto';
+import { RbacService, RbacResource, RbacAction } from '../../common/rbac';
+import { JwtUser } from '../../common/decorators/current-user.decorator';
 
 @Injectable()
 export class ActivitiesService {
@@ -13,25 +15,43 @@ export class ActivitiesService {
 
   constructor(
     private readonly activitiesRepo: ActivitiesRepository,
+    private readonly rbacService: RbacService,
     private readonly ws: WsService,
     @InjectQueue(QUEUE_NAMES.AI_EMBEDDING) private readonly embeddingQueue: Queue,
   ) {}
 
-  async getTimeline(query: TimelineQueryDto) {
+  async getTimeline(user: JwtUser, query: TimelineQueryDto) {
+    this.rbacService.checkPermission(user, RbacResource.ACTIVITY, RbacAction.READ);
     return this.activitiesRepo.getTimeline(query);
   }
 
-  async findAll(filters: FilterActivityDto) {
-    return this.activitiesRepo.findAll(filters);
+  async findAll(user: JwtUser, filters: FilterActivityDto) {
+    return this.rbacService.withRBAC(
+      user, RbacResource.ACTIVITY, RbacAction.READ,
+      (scope) => this.activitiesRepo.findAll(filters, scope),
+    );
   }
 
-  async findById(id: string) {
-    const activity = await this.activitiesRepo.findById(id);
-    if (!activity) throw new NotFoundError('Activity', id);
-    return activity;
+  async findById(user: JwtUser, id: string) {
+    return this.rbacService.withRBAC(
+      user, RbacResource.ACTIVITY, RbacAction.READ,
+      async (scope) => {
+        const activity = await this.activitiesRepo.findById(id, scope);
+        if (!activity) throw new NotFoundError('Activity', id);
+        return activity;
+      },
+    );
   }
 
-  async create(dto: CreateActivityDto, createdById: string, tenantId: string) {
+  async create(user: JwtUser, dto: CreateActivityDto) {
+    return this.rbacService.withRBAC(
+      user, RbacResource.ACTIVITY, RbacAction.CREATE,
+      () => this._createActivity(user, dto),
+    );
+  }
+
+  private async _createActivity(user: JwtUser, dto: CreateActivityDto) {
+    const { id: createdById, tenantId } = user;
     const activity = await this.activitiesRepo.create({
       type: dto.type,
       entityType: dto.entityType,
@@ -89,9 +109,18 @@ export class ActivitiesService {
     return activity;
   }
 
-  async update(id: string, dto: UpdateActivityDto) {
-    const existing = await this.findById(id);
+  async update(user: JwtUser, id: string, dto: UpdateActivityDto) {
+    return this.rbacService.withRBAC(
+      user, RbacResource.ACTIVITY, RbacAction.UPDATE,
+      async (scope) => {
+        const existing = await this.activitiesRepo.findById(id, scope);
+        if (!existing) throw new NotFoundError('Activity', id);
+        return this._updateActivity(existing, id, dto);
+      },
+    );
+  }
 
+  private async _updateActivity(existing: { tenantId: string }, id: string, dto: UpdateActivityDto) {
     const updated = await this.activitiesRepo.update(id, {
       ...(dto.type !== undefined && { type: dto.type }),
       ...(dto.entityType !== undefined && { entityType: dto.entityType }),
@@ -145,8 +174,18 @@ export class ActivitiesService {
     return updated;
   }
 
-  async delete(id: string) {
-    const existing = await this.findById(id);
+  async delete(user: JwtUser, id: string) {
+    return this.rbacService.withRBAC(
+      user, RbacResource.ACTIVITY, RbacAction.DELETE,
+      async (scope) => {
+        const existing = await this.activitiesRepo.findById(id, scope);
+        if (!existing) throw new NotFoundError('Activity', id);
+        return this._deleteActivity(existing, id);
+      },
+    );
+  }
+
+  private async _deleteActivity(existing: { tenantId: string }, id: string) {
     await this.activitiesRepo.delete(id);
 
     // Purge orphaned embedding — fire-and-forget

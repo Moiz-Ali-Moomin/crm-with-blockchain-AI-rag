@@ -12,6 +12,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import {
   UnauthorizedError,
   ConflictError,
@@ -73,7 +74,9 @@ export class AuthService {
           passwordHash,
           firstName: dto.firstName,
           lastName: dto.lastName,
-          role: 'ADMIN', // First user in org is always ADMIN
+          // Org founder bootstrapped as ADMIN — the only code path that creates an ADMIN
+          // without explicit SUPER_ADMIN elevation. Never derive this from client input.
+          role: UserRole.ADMIN,
         },
       });
 
@@ -198,6 +201,12 @@ export class AuthService {
       .catch(() => {/* non-fatal — user can request another reset */});
 
     return { message: 'If this email exists, a reset link has been sent.' };
+  }
+
+  async getMe(userId: string) {
+    const user = await this.authRepo.findById(userId);
+    if (!user) throw new UnauthorizedError('User not found');
+    return this.sanitizeUser(user);
   }
 
   async resetPassword(dto: ResetPasswordDto) {

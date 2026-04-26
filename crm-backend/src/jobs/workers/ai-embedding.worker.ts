@@ -22,7 +22,13 @@ import { QUEUE_NAMES } from '../../core/queue/queue.constants';
 import { IEmbeddingService, EMBEDDING_SERVICE } from '../../modules/ai/embedding.interface';
 import { EmbeddingJobPayload } from '../../modules/ai/ai.dto';
 
-@Processor(QUEUE_NAMES.AI_EMBEDDING)
+@Processor(QUEUE_NAMES.AI_EMBEDDING, {
+  // One job at a time — prevents concurrent embedding API calls from this worker.
+  concurrency: 1,
+  // Hard rate cap shared across all pods via Redis: max 20 embedding calls/minute.
+  // This is the backstop if multiple worker instances are running.
+  limiter: { max: 20, duration: 60_000 },
+})
 export class AiEmbeddingWorker extends WorkerHost {
   private readonly logger = new Logger(AiEmbeddingWorker.name);
 

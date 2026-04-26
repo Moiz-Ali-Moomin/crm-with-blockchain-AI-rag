@@ -11,6 +11,7 @@ import { PrismaService } from '../../core/database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { buildPrismaSkipTake, buildPaginatedResult } from '../../common/dto/pagination.dto';
 import { FilterActivityDto, TimelineQueryDto } from './activities.dto';
+import { RbacScope } from '../../common/rbac';
 
 @Injectable()
 export class ActivitiesRepository {
@@ -39,10 +40,10 @@ export class ActivitiesRepository {
     return buildPaginatedResult(data, total, page, limit);
   }
 
-  async findAll(filters: FilterActivityDto) {
+  async findAll(filters: FilterActivityDto, scope: RbacScope = {}) {
     const { page, limit, sortBy, sortOrder, search, entityType, entityId, type, createdById, dateFrom, dateTo } = filters;
 
-    const where: Prisma.ActivityWhereInput = {
+    const baseWhere: Prisma.ActivityWhereInput = {
       ...(entityType && { entityType: entityType as any }),
       ...(entityId && { entityId }),
       ...(type && { type: type as any }),
@@ -63,6 +64,10 @@ export class ActivitiesRepository {
       }),
     };
 
+    // Merge scope using AND to avoid OR key collisions with the search filter
+    const where: Prisma.ActivityWhereInput =
+      Object.keys(scope).length > 0 ? { AND: [baseWhere, scope] } : baseWhere;
+
     const [data, total] = await Promise.all([
       this.prisma.activity.findMany({
         where,
@@ -78,9 +83,12 @@ export class ActivitiesRepository {
     return buildPaginatedResult(data, total, page, limit);
   }
 
-  async findById(id: string) {
+  async findById(id: string, scope: RbacScope = {}) {
+    const where: Prisma.ActivityWhereInput =
+      Object.keys(scope).length > 0 ? { AND: [{ id }, scope] } : { id };
+
     return this.prisma.activity.findFirst({
-      where: { id },
+      where,
       include: {
         createdBy: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
       },

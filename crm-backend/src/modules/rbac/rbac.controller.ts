@@ -7,7 +7,7 @@
 
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { RbacService } from './rbac.service';
+import { RbacPolicyService } from './rbac-policy.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -20,7 +20,7 @@ import { UserRole } from '@prisma/client';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('rbac')
 export class RbacController {
-  constructor(private readonly service: RbacService) {}
+  constructor(private readonly service: RbacPolicyService) {}
 
   @Get('roles')
   @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)

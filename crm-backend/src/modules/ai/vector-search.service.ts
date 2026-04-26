@@ -16,6 +16,7 @@ import { PrismaService } from '../../core/database/prisma.service';
 import { IEmbeddingService, EMBEDDING_SERVICE } from './embedding.interface';
 import { RedisService } from '../../core/cache/redis.service';
 import { CACHE_KEYS, CACHE_TTL } from '../../core/cache/cache-keys';
+import { ThrottledApiQueue } from './throttled-api-queue.service';
 import { createHash } from 'crypto';
 
 export interface SemanticSearchResult {
@@ -45,6 +46,7 @@ export class VectorSearchService {
     private readonly prisma: PrismaService,
     @Inject(EMBEDDING_SERVICE) private readonly embeddingService: IEmbeddingService,
     private readonly redis: RedisService,
+    private readonly throttledApi: ThrottledApiQueue,
   ) {}
 
   /**
@@ -82,8 +84,12 @@ export class VectorSearchService {
     const cached = await this.redis.get<SemanticSearchResult[]>(cacheKey);
     if (cached) return cached;
 
-    // Generate embedding for the query text
-    const queryEmbedding = await this.embeddingService.generateEmbedding(query);
+    // Generate embedding for the query text — routed through the throttled queue
+    // so concurrent requests don't burst the embedding API simultaneously.
+    const queryEmbedding = await this.throttledApi.embed(
+      query,
+      () => this.embeddingService.generateEmbedding(query),
+    );
 
     // pgvector cosine distance is undefined for zero-magnitude vectors (division by zero).
     // MockEmbeddingService returns all-zeros when AI is disabled — bail out early.
