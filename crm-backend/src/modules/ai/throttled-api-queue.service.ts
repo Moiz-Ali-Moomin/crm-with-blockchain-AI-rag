@@ -22,7 +22,7 @@
  *   6. Every call, gap, and retry is logged with a wall-clock timestamp.
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'crypto';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -31,6 +31,11 @@ const MIN_GAP_MS          = 300;
 const RETRY_DELAYS_MS     = [1_000, 2_000, 4_000] as const; // 429 back-off schedule
 const EMBEDDING_CACHE_MAX = 500;
 const LLM_CACHE_MAX       = 200;
+// Hard cap on items waiting + executing in the chain. Each AI call can take
+// 20-60 s; 10 items × 60 s = 10 minutes max backlog — reject beyond this to
+// prevent unbounded queue growth and cascading 429s. Callers receive 503 and
+// show a "service busy" message without retrying.
+const MAX_QUEUE_DEPTH     = 10;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +84,11 @@ export class ThrottledApiQueue {
   // In-flight deduplication: key → shared promise for concurrent identical calls.
   private readonly inFlight = new Map<string, Promise<unknown>>();
 
+  // Count of items currently waiting or executing in the sequential chain.
+  // Incremented when an item joins the chain; decremented in finally so it
+  // always tracks correctly regardless of success or failure.
+  private queueDepth = 0;
+
   // L1 in-memory caches (faster than Redis, lives for the process lifetime).
   private readonly embeddingCache = new Map<string, number[]>();
   private readonly llmCache       = new Map<string, string>();
@@ -93,8 +103,10 @@ export class ThrottledApiQueue {
    *   - In-flight dedup (concurrent identical texts share one call)
    *   - Sequential queuing + 300 ms gap
    *   - 429 retry with exponential back-off
+   *   - Optional AbortSignal: if the caller's HTTP request closes before this
+   *     item reaches the front of the queue, execution is skipped entirely.
    */
-  async embed(text: string, fn: () => Promise<number[]>): Promise<number[]> {
+  async embed(text: string, fn: () => Promise<number[]>, signal?: AbortSignal): Promise<number[]> {
     const key = createHash('sha256').update(text).digest('hex').slice(0, 24);
 
     const cached = this.embeddingCache.get(key);
@@ -103,7 +115,7 @@ export class ThrottledApiQueue {
       return cached;
     }
 
-    const result = await this.schedule<number[]>(`embed:${key}`, fn);
+    const result = await this.schedule<number[]>(`embed:${key}`, fn, signal);
 
     evictIfFull(this.embeddingCache, EMBEDDING_CACHE_MAX);
     this.embeddingCache.set(key, result);
@@ -117,12 +129,13 @@ export class ThrottledApiQueue {
    *   - Optional in-memory cache (pass cacheKey to enable; omit for unique calls)
    *   - Sequential queuing + 300 ms gap
    *   - 429 retry with exponential back-off
+   *   - Optional AbortSignal: skips execution if caller disconnected while queued
    *
    * Pass cacheKey for stateless queries (no conversation history) so identical
    * questions hitting the queue in the same process lifetime return instantly.
    * Omit cacheKey for conversational turns — they are always unique.
    */
-  async llm(fn: () => Promise<string>, cacheKey?: string): Promise<string> {
+  async llm(fn: () => Promise<string>, cacheKey?: string, signal?: AbortSignal): Promise<string> {
     if (cacheKey) {
       const cached = this.llmCache.get(cacheKey);
       if (cached) {
@@ -130,7 +143,7 @@ export class ThrottledApiQueue {
         return cached;
       }
 
-      const result = await this.schedule<string>(`llm:${cacheKey}`, fn);
+      const result = await this.schedule<string>(`llm:${cacheKey}`, fn, signal);
 
       evictIfFull(this.llmCache, LLM_CACHE_MAX);
       this.llmCache.set(cacheKey, result);
@@ -138,24 +151,54 @@ export class ThrottledApiQueue {
     }
 
     // No cacheKey → still sequential + retry, but no cache / in-flight dedup.
-    return this.schedule<string>(uniqueKey(), fn);
+    return this.schedule<string>(uniqueKey(), fn, signal);
   }
 
   // ── Core scheduling ────────────────────────────────────────────────────────
 
-  private schedule<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  private schedule<T>(key: string, fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     // Return the existing promise if an identical call is already in flight.
+    // Deduped calls do not count toward queue depth — they share one slot.
     const existing = this.inFlight.get(key) as Promise<T> | undefined;
     if (existing) {
       this.logger.debug(`[queue] dedup in-flight key=${key.slice(0, 28)}`);
       return existing;
     }
 
+    // Reject early if already aborted before even joining the queue.
+    if (signal?.aborted) {
+      return Promise.reject(Object.assign(new Error('Request aborted before queuing'), { name: 'AbortError' }));
+    }
+
+    // Reject early if the queue is already at capacity. This prevents unbounded
+    // backlog build-up when AI calls are slow (20-60 s each). The 503 surfaces
+    // to the frontend which shows a "service busy" message without retrying.
+    if (this.queueDepth >= MAX_QUEUE_DEPTH) {
+      this.logger.warn(
+        `[queue] OVERLOADED depth=${this.queueDepth}/${MAX_QUEUE_DEPTH} — rejecting key=${key.slice(0, 28)}`,
+      );
+      throw new ServiceUnavailableException(
+        'AI service is currently busy. Please try again in a moment.',
+      );
+    }
+
+    this.queueDepth++;
+
     const promise = this.tail.then(async (): Promise<T> => {
+      // Check if the client disconnected while this item was waiting in queue.
+      // Skipping here saves the full 20-60 s AI call for a request nobody will read.
+      if (signal?.aborted) {
+        const label = key.slice(0, 28);
+        this.logger.log(`[queue] SKIP (client aborted) key=${label}`);
+        throw Object.assign(new Error('Request aborted while queued'), { name: 'AbortError' });
+      }
+
       await this.enforceGap();
 
       const label = key.slice(0, 28);
-      this.logger.log(`[queue] ${new Date().toISOString()} → start key=${label}`);
+      this.logger.log(
+        `[queue] ${new Date().toISOString()} → start key=${label} depth=${this.queueDepth}`,
+      );
       const t0 = Date.now();
 
       const result = await this.withRetry(key, fn);
@@ -174,8 +217,12 @@ export class ThrottledApiQueue {
     );
 
     this.inFlight.set(key, promise as Promise<unknown>);
-    // Clean up in-flight entry after settle regardless of outcome.
-    void promise.finally(() => this.inFlight.delete(key));
+    // Clean up in-flight entry and queue depth counter after settle.
+    // Using finally guarantees the decrement happens on both success and error.
+    void promise.finally(() => {
+      this.inFlight.delete(key);
+      this.queueDepth--;
+    });
 
     return promise;
   }

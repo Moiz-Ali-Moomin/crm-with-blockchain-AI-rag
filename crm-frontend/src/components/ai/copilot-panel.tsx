@@ -30,7 +30,7 @@ interface CopilotPanelProps {
 }
 
 export function CopilotPanel({ compact = false, onOpenFull }: CopilotPanelProps) {
-  const { messages, isLoading, sendMessage, clearMessages } = useCopilotStore();
+  const { messages, isLoading, sendMessage, clearMessages, cancelRequest } = useCopilotStore();
   const [input, setInput] = useState('');
   const [toolIdx, setToolIdx] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -40,6 +40,14 @@ export function CopilotPanel({ compact = false, onOpenFull }: CopilotPanelProps)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  // Cancel any in-flight request when the panel unmounts (navigation away).
+  // Without this, isLoading stays true in the Zustand store and the spinner
+  // appears stale when the user navigates back to the panel.
+  useEffect(() => {
+    return () => { cancelRequest(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Cycle through tool status labels while the AI is working
   useEffect(() => {
@@ -153,8 +161,9 @@ export function CopilotPanel({ compact = false, onOpenFull }: CopilotPanelProps)
             {SUGGESTED_PROMPTS.map((p) => (
               <button
                 key={p}
+                disabled={isLoading}
                 onClick={() => { setInput(p); inputRef.current?.focus(); }}
-                className="rounded-full border border-ui-border bg-canvas px-2.5 py-1 text-[11px] text-fg-secondary hover:border-blue-300 hover:text-blue-600 transition-colors"
+                className="rounded-full border border-ui-border bg-canvas px-2.5 py-1 text-[11px] text-fg-secondary hover:border-blue-300 hover:text-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {p}
               </button>

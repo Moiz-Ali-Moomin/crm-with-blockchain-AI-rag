@@ -63,6 +63,14 @@ apiClient.interceptors.response.use(
         return Promise.reject(error);
       }
 
+      // Never replay AI requests after a token refresh. They are long-running
+      // (20-60 s) and replaying them would fire a duplicate pipeline on the
+      // backend. The frontend's error handler will show a session-expired
+      // message instead. The user can log in and retry manually.
+      if (originalRequest.url?.includes('/ai/')) {
+        return Promise.reject(error);
+      }
+
       if (isRefreshing) {
         return new Promise<void>((resolve, reject) => {
           failedQueue.push({ resolve, reject });

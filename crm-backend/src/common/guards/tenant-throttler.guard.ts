@@ -38,6 +38,17 @@ const TIER_LIMITS: Record<TenantTier, { rpm: number }> = {
   enterprise: { rpm: 2_000 },
 };
 
+// AI endpoints are expensive and slow (20-60 s each). Apply a stricter
+// per-user limit on top of the per-tenant limit so one heavy user cannot
+// exhaust the tenant's shared quota. These limits are generous relative to
+// the actual throughput possible (max ~3 req/min at 20 s/call).
+const AI_USER_RPM: Record<TenantTier, number> = {
+  free:       5,
+  starter:    10,
+  pro:        20,
+  enterprise: 60,
+};
+
 // JWT has no `tier` claim — derive tier from role so admins aren't capped at free limits.
 function tierFromRole(role?: string): TenantTier {
   switch (role) {
@@ -88,20 +99,26 @@ export class TenantThrottlerGuard extends ThrottlerGuard {
     if (!baseAllowed) return false;
 
     const res = context.switchToHttp().getResponse<Response>();
-    const user = (req as any).user as { tenantId?: string; tier?: TenantTier; role?: string } | undefined;
+    const user = (req as any).user as {
+      id?: string;
+      tenantId?: string;
+      tier?: TenantTier;
+      role?: string;
+    } | undefined;
 
     if (!user?.tenantId) return true;
 
     const tier = user.tier ?? tierFromRole(user.role);
     const { rpm } = TIER_LIMITS[tier] ?? TIER_LIMITS.free;
 
-    const result = await this.slidingWindow.check(
+    // ── Per-tenant sliding window ──────────────────────────────────────────────
+    const tenantResult = await this.slidingWindow.check(
       `swrl:tenant:${user.tenantId}:rpm`,
       rpm,
       60_000,
     );
 
-    if (!result.allowed) {
+    if (!tenantResult.allowed) {
       res.setHeader('X-RateLimit-Limit', rpm);
       res.setHeader('X-RateLimit-Remaining', 0);
       res.setHeader('X-RateLimit-Reset', Math.ceil(Date.now() / 1000) + 60);
@@ -118,7 +135,39 @@ export class TenantThrottlerGuard extends ThrottlerGuard {
     }
 
     res.setHeader('X-RateLimit-Limit', rpm);
-    res.setHeader('X-RateLimit-Remaining', result.remaining);
+    res.setHeader('X-RateLimit-Remaining', tenantResult.remaining);
+
+    // ── Per-user AI sliding window ─────────────────────────────────────────────
+    // AI calls are expensive (20-60 s each). Without a per-user check, a single
+    // user can exhaust the entire tenant's shared bucket. This secondary check
+    // uses the JWT subject (user.id ?? user.sub) to isolate each user's AI quota.
+    // Passport-JWT populates `sub` from the token; some strategies also copy it
+    // to `id`. We accept either so the guard works regardless of JWT shape.
+    const userId = user.id ?? (user as any).sub;
+    if (userId && path.includes('/ai/')) {
+      const aiRpm = AI_USER_RPM[tier] ?? AI_USER_RPM.free;
+      const aiResult = await this.slidingWindow.check(
+        `swrl:user:${userId}:ai:rpm`,
+        aiRpm,
+        60_000,
+      );
+
+      if (!aiResult.allowed) {
+        res.setHeader('X-RateLimit-Limit', aiRpm);
+        res.setHeader('X-RateLimit-Remaining', 0);
+        res.setHeader('X-RateLimit-Reset', Math.ceil(Date.now() / 1000) + 60);
+        res.setHeader('Retry-After', '60');
+
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.TOO_MANY_REQUESTS,
+            error: 'Too Many Requests',
+            message: `AI rate limit exceeded: ${aiRpm} req/min per user.`,
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    }
 
     return true;
   }
