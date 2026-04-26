@@ -10,6 +10,7 @@ import { AiCostControlService } from './cost-control.service';
 import { BusinessMetricsService } from '../../core/metrics/business-metrics.service';
 import { LLM_PROVIDER } from './providers/llm.interface';
 import { DbFallbackService } from './db-fallback.service';
+import { ThrottledApiQueue } from './throttled-api-queue.service';
 import { QUEUE_NAMES } from '../../core/queue/queue.constants';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -73,6 +74,11 @@ const mockEmbeddingQueue = {
   addBulk: jest.fn().mockResolvedValue([]),
 };
 
+const mockThrottledApi = {
+  llm: jest.fn().mockImplementation((fn: () => unknown) => fn()),
+  embedding: jest.fn().mockImplementation((fn: () => unknown) => fn()),
+};
+
 // ── Test suite ────────────────────────────────────────────────────────────────
 
 describe('RagService', () => {
@@ -81,6 +87,8 @@ describe('RagService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockLlmProvider.generate.mockResolvedValue('Acme Corp had a deal won in May.');
+    mockThrottledApi.llm.mockImplementation((fn: () => unknown) => fn());
+    mockThrottledApi.embedding.mockImplementation((fn: () => unknown) => fn());
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -103,6 +111,7 @@ describe('RagService', () => {
         { provide: AiCostControlService, useValue: mockCostControl },
         { provide: BusinessMetricsService, useValue: mockBusinessMetrics },
         { provide: DbFallbackService, useValue: mockDbFallback },
+        { provide: ThrottledApiQueue, useValue: mockThrottledApi },
         { provide: getQueueToken(QUEUE_NAMES.AI_EMBEDDING), useValue: mockEmbeddingQueue },
       ],
     }).compile();
