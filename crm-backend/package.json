@@ -4,7 +4,7 @@
   "description": "Production-grade CRM SaaS Backend (NestJS + Prisma + PostgreSQL + Reseeddis)",
   "scripts": {
     "build": "nest build",
-    "start": "node dist/src/main.js",
+    "start": "node -r ./otel.js dist/src/main.js",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
