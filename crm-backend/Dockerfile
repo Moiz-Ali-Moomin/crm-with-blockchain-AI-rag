@@ -62,4 +62,4 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3001/api/v1/health/live || exit 1
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]  
+CMD ["sh", "-c", "npx prisma migrate deploy && node -r /app/otel.js dist/src/main.js"]
