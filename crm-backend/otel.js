@@ -4,9 +4,13 @@ const { NodeSDK } = require('@opentelemetry/sdk-node');
 const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
 const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http');
 
-const endpoint =
+const base =
   process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
-  'http://crm_otel_collector:4318/v1/traces';
+  'http://crm_otel_collector:4318';
+
+const endpoint = base.endsWith('/v1/traces')
+  ? base
+  : base + '/v1/traces';
 
 const sdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter({
@@ -15,7 +19,6 @@ const sdk = new NodeSDK({
   instrumentations: [getNodeAutoInstrumentations()],
 });
 
-// ✅ NO .then()
 try {
   sdk.start();
   console.log(`[OTEL] started → ${endpoint}`);
@@ -23,7 +26,6 @@ try {
   console.error('[OTEL] failed to start', err);
 }
 
-// graceful shutdown
 process.on('SIGTERM', async () => {
   try {
     await sdk.shutdown();
