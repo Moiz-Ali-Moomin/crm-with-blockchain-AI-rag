@@ -129,6 +129,64 @@ jobs:
               echo "  OK: crm_nginx bind mounts verified"
             fi
 
+            # ── [0c] Reconcile otel-collector config drift ───────────────────
+            # WHY: observability/otelcollector/config.yml is bind-mounted into
+            # crm_otel_collector. Edits to the file land on disk via the git
+            # checkout above, but the running collector reads config ONLY at
+            # process start — it does not hot-reload on file change. After a
+            # config edit the live collector silently runs the old pipeline
+            # until something restarts it.
+            #
+            # WHY cmp instead of unconditional restart: restarting on every
+            # deploy drops in-flight spans/logs/metrics held in collector
+            # memory (batch processor queues). We restart only when the file
+            # on disk genuinely differs from what the container is running.
+            # cmp returns 0 = identical, 1 = differs, >1 = error (treated as
+            # differs so we err on the side of applying the latest config).
+            #
+            # WHY restart, not up -d --force-recreate: the docker-compose.yml
+            # service spec for otel-collector hasn't changed — only the
+            # bind-mounted file inside it has. `restart` re-execs the process
+            # which re-reads the mounted config; ~2s downtime for the collector
+            # vs ~5s for full recreate. App traffic is unaffected either way
+            # because exporters retry on connection failure (BatchSpanProcessor,
+            # BatchLogRecordProcessor, PeriodicExportingMetricReader all buffer
+            # in-memory and reconnect once the collector is back).
+            echo "Checking otel-collector config drift..."
+            if docker ps --format '{{.Names}}' | grep -q '^crm_otel_collector$'; then
+              if docker exec crm_otel_collector \
+                   cmp -s /etc/otelcol/config.yml /etc/otelcol/config.yml 2>/dev/null \
+                 && docker cp \
+                   "$DEPLOY_PATH/observability/otelcollector/config.yml" \
+                   crm_otel_collector:/tmp/config.expected.yml 2>/dev/null \
+                 && docker exec crm_otel_collector \
+                   cmp -s /etc/otelcol/config.yml /tmp/config.expected.yml 2>/dev/null; then
+                echo "  OK: otel-collector config in sync"
+              else
+                echo "  config drift detected — restarting otel-collector"
+                docker compose -f "$DEPLOY_PATH/docker-compose.yml" restart otel-collector
+                # Wait for the collector to start accepting OTLP — health_check
+                # extension is on :13133 inside the container.
+                for i in $(seq 1 12); do
+                  if docker exec crm_otel_collector \
+                       wget -qO- --timeout=2 http://127.0.0.1:13133/ >/dev/null 2>&1; then
+                    echo "  OK: otel-collector healthy after restart (attempt $i/12)"
+                    break
+                  fi
+                  if [ "$i" = "12" ]; then
+                    echo "  WARN: otel-collector did not report healthy in 24s — dumping logs"
+                    docker logs crm_otel_collector --tail 30
+                    # Non-fatal: app exporters retry; do not block the deploy.
+                  fi
+                  sleep 2
+                done
+              fi
+            else
+              echo "  crm_otel_collector not running — starting it"
+              docker compose -f "$DEPLOY_PATH/docker-compose.yml" up -d otel-collector
+              sleep 3
+            fi
+
             # ── [1] Authenticate to GHCR ────────────────────────────────────
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
