@@ -10,6 +10,7 @@
 import { Module, MiddlewareConsumer, NestModule, RequestMethod } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { CsrfGuard } from './common/guards/csrf.guard';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { RedisThrottlerStorage } from './common/rate-limit/redis-throttler.storage';
 import { ConfigService } from '@nestjs/config';
@@ -192,6 +193,7 @@ import { AiConcurrencyInterceptor } from './common/interceptors/ai-concurrency.i
     HealthModule,
   ],
   providers: [
+    { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: TenantThrottlerGuard },
     // Releases the AI concurrency slot after the handler finishes (success or error).

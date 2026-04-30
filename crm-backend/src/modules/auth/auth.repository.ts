@@ -16,6 +16,16 @@ export class AuthRepository {
     );
   }
 
+  /** Scoped lookup: finds user matching BOTH email and tenant. Used during login. */
+  async findByEmailAndTenant(email: string, tenantId: string) {
+    return this.prisma.withoutTenantScope(() =>
+      this.prisma.user.findFirst({
+        where: { email, tenantId },
+        include: { tenant: true },
+      }),
+    );
+  }
+
   async findById(id: string) {
     return this.prisma.withoutTenantScope(() =>
       this.prisma.user.findUnique({ where: { id } }),
@@ -58,6 +68,13 @@ export class AuthRepository {
       await this.prisma.refreshSession.delete({ where: { tokenHash } });
       return session.user;
     });
+  }
+
+  /** Deletes only the single session identified by its SHA-256 token hash. */
+  async deleteRefreshSession(tokenHash: string) {
+    return this.prisma.withoutTenantScope(() =>
+      this.prisma.refreshSession.deleteMany({ where: { tokenHash } }),
+    );
   }
 
   async deleteAllRefreshSessions(userId: string) {

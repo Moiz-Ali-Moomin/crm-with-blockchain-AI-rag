@@ -97,11 +97,12 @@ export class AuthController {
     @Req() req: Request & { cookies: Record<string, string> },
     @Res({ passthrough: true }) res: Response,
   ) {
-    const token =
+    const accessToken =
       req.cookies?.access_token ??
       (req.headers.authorization?.replace('Bearer ', '') ?? '');
+    const refreshToken = req.cookies?.refresh_token;
 
-    await this.authService.logout(userId, token);
+    await this.authService.logout(userId, accessToken, refreshToken);
     this.clearAuthCookies(res);
     return { message: 'Logged out successfully' };
   }

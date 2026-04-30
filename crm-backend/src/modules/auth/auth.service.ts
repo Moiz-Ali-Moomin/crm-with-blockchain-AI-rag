@@ -120,23 +120,30 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.authRepo.findByEmail(dto.email.toLowerCase());
+    // Step 1: resolve tenant — must exist before checking any user credential
+    const tenant = await this.authRepo.findTenantBySlug(dto.organizationSlug);
 
+    // Step 2: find user scoped to that tenant
+    const user = tenant
+      ? await this.authRepo.findByEmailAndTenant(dto.email.toLowerCase(), tenant.id)
+      : null;
+
+    // Step 3: validate password. Generic error prevents tenant/user enumeration.
     if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
-      throw new UnauthorizedError('Invalid email or password');
+      throw new UnauthorizedError('Invalid credentials');
     }
 
     if (user.status !== 'ACTIVE') {
       throw new UnauthorizedError('Account is not active. Contact your administrator.');
     }
 
-    const tokens = await this.generateTokens(user.id, user.email, user.tenantId, user.role);
+    const tokens = await this.generateTokens(user.id, user.email, tenant!.id, user.role);
 
     await this.authRepo.updateLastLogin(user.id);
 
     return {
       user: this.sanitizeUser(user),
-      tenant: { id: user.tenant.id, name: user.tenant.name, slug: user.tenant.slug },
+      tenant: { id: tenant!.id, name: tenant!.name, slug: tenant!.slug },
       ...tokens,
     };
   }
@@ -163,12 +170,18 @@ export class AuthService {
     return this.generateTokens(user.id, user.email, user.tenantId, user.role);
   }
 
-  async logout(userId: string, accessToken: string) {
+  async logout(userId: string, accessToken: string, refreshToken?: string) {
     // Blacklist the access token in Redis until it naturally expires
     await this.blacklist.add(accessToken);
 
-    // Delete all refresh sessions for this user (sign out everywhere)
-    await this.authRepo.deleteAllRefreshSessions(userId);
+    if (refreshToken) {
+      // Surgical logout: remove only the session for this device
+      const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
+      await this.authRepo.deleteRefreshSession(tokenHash);
+    } else {
+      // Fallback (no cookie sent): clear all sessions to be safe
+      await this.authRepo.deleteAllRefreshSessions(userId);
+    }
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {

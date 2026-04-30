@@ -23,6 +23,11 @@ export const RegisterSchema = z.object({
 });
 
 export const LoginSchema = z.object({
+  organizationSlug: z
+    .string()
+    .min(2)
+    .max(50)
+    .regex(/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens'),
   email: z.string().email(),
   password: z.string().min(1),
 });
