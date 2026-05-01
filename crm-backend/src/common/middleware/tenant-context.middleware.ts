@@ -25,14 +25,14 @@ export class TenantContextMiddleware implements NestMiddleware {
   ) {}
 
   use(req: Request, res: Response, next: NextFunction) {
-    const authHeader = req.headers.authorization;
+    // Cookie-first (SSR/Frontend); fall back to Bearer header (API/Swagger)
+    const token = req.cookies?.access_token || req.headers.authorization?.replace('Bearer ', '');
+    const requestId = req.headers['x-request-id'] as string;
 
-    if (!authHeader?.startsWith('Bearer ')) {
+    if (!token) {
       // Some endpoints are public - let the JwtAuthGuard handle the rejection
-      return tenantContext.run({ tenantId: '' }, next);
+      return tenantContext.run({ tenantId: '', requestId }, next);
     }
-
-    const token = authHeader.substring(7);
 
     try {
       const payload = this.jwtService.verify<JwtPayload>(
@@ -49,12 +49,13 @@ export class TenantContextMiddleware implements NestMiddleware {
         {
           tenantId: payload.tenantId,
           userId: payload.sub,
+          requestId,
         },
         next,
       );
     } catch {
       // Invalid tokens are handled by the JWT guard downstream
-      tenantContext.run({ tenantId: '' }, next);
+      tenantContext.run({ tenantId: '', requestId }, next);
     }
   }
 }

@@ -128,13 +128,21 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    // Step 1: resolve tenant — must exist before checking any user credential
-    const tenant = await this.authRepo.findTenantBySlug(dto.organizationSlug);
+    let user;
+    let tenant;
 
-    // Step 2: find user scoped to that tenant
-    const user = tenant
-      ? await this.authRepo.findByEmailAndTenant(dto.email.toLowerCase(), tenant.id)
-      : null;
+    if (dto.organizationSlug) {
+      // Step 1: Explicit login — resolve tenant first
+      tenant = await this.authRepo.findTenantBySlug(dto.organizationSlug);
+      user = tenant
+        ? await this.authRepo.findByEmailAndTenant(dto.email.toLowerCase(), tenant.id)
+        : null;
+    } else {
+      // Step 1: Global login — find user by email across all tenants
+      // This helper includes the tenant relation
+      user = await this.authRepo.findByEmail(dto.email.toLowerCase());
+      tenant = user?.tenant;
+    }
 
     // Step 3: validate password. Generic error prevents tenant/user enumeration.
     if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {

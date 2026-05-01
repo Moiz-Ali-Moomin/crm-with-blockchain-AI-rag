@@ -60,8 +60,9 @@ export class PrismaService
         // If no tenant context is set, block the operation
         // (Prevents accidental data leakage or cross-tenant contamination)
         if (!tenantId) {
+          const requestId = (ctx as any)?.requestId || 'unknown';
           throw new Error(
-            `Tenant context is required for model ${params.model} during ${params.action}.`,
+            `Multi-tenancy violation: Tenant context is missing for model ${params.model} (${params.action}). RequestId: ${requestId}`,
           );
         }
 
