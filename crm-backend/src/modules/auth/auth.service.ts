@@ -52,69 +52,77 @@ export class AuthService {
   async register(dto: RegisterDto) {
     const existingTenant = await this.authRepo.findTenantBySlug(dto.organizationSlug);
     if (existingTenant) {
-      // Generic error — do not reveal whether the slug exists (prevents tenant enumeration)
-      throw new ConflictError('Registration failed. Please try a different organization name.');
+      throw new ConflictError(
+        'Registration failed. Please try a different organization name.'
+      );
     }
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
-    // Create tenant + admin user + default pipeline in a single transaction
-    const { user, tenant } = await this.tx.run(async (tx) => {
-      const tenant = await tx.tenant.create({
-        data: {
-          name: dto.organizationName,
-          slug: dto.organizationSlug,
-        },
+    // 🔥 CRITICAL FIX: bypass tenant middleware for bootstrap
+    const { user, tenant } = await this.tx.withoutTenantScope(async () => {
+      return this.tx.run(async (tx) => {
+        const tenant = await tx.tenant.create({
+          data: {
+            name: dto.organizationName,
+            slug: dto.organizationSlug,
+          },
+        });
+
+        const user = await tx.user.create({
+          data: {
+            tenantId: tenant.id,
+            email: dto.email.toLowerCase(),
+            passwordHash,
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            role: UserRole.ADMIN,
+          },
+        });
+
+        const pipeline = await tx.pipeline.create({
+          data: {
+            tenantId: tenant.id,
+            name: 'Sales Pipeline',
+            isDefault: true,
+          },
+        });
+
+        const defaultStages = [
+          { name: 'Lead', position: 0, probability: 0.1, color: '#94a3b8' },
+          { name: 'Qualified', position: 1, probability: 0.3, color: '#60a5fa' },
+          { name: 'Proposal', position: 2, probability: 0.5, color: '#a78bfa' },
+          { name: 'Negotiation', position: 3, probability: 0.7, color: '#fb923c' },
+          { name: 'Closed Won', position: 4, probability: 1.0, color: '#4ade80', isWon: true },
+          { name: 'Closed Lost', position: 5, probability: 0.0, color: '#f87171', isLost: true },
+        ];
+
+        await tx.stage.createMany({
+          data: defaultStages.map((s) => ({
+            ...s,
+            pipelineId: pipeline.id,
+            tenantId: tenant.id,
+          })),
+        });
+
+        return { user, tenant };
       });
-
-      const user = await tx.user.create({
-        data: {
-          tenantId: tenant.id,
-          email: dto.email.toLowerCase(),
-          passwordHash,
-          firstName: dto.firstName,
-          lastName: dto.lastName,
-          // Org founder bootstrapped as ADMIN — the only code path that creates an ADMIN
-          // without explicit SUPER_ADMIN elevation. Never derive this from client input.
-          role: UserRole.ADMIN,
-        },
-      });
-
-      // Create default sales pipeline for new tenant
-      const pipeline = await tx.pipeline.create({
-        data: {
-          tenantId: tenant.id,
-          name: 'Sales Pipeline',
-          isDefault: true,
-        },
-      });
-
-      // Create default stages
-      const defaultStages = [
-        { name: 'Lead', position: 0, probability: 0.1, color: '#94a3b8' },
-        { name: 'Qualified', position: 1, probability: 0.3, color: '#60a5fa' },
-        { name: 'Proposal', position: 2, probability: 0.5, color: '#a78bfa' },
-        { name: 'Negotiation', position: 3, probability: 0.7, color: '#fb923c' },
-        { name: 'Closed Won', position: 4, probability: 1.0, color: '#4ade80', isWon: true },
-        { name: 'Closed Lost', position: 5, probability: 0.0, color: '#f87171', isLost: true },
-      ];
-
-      await tx.stage.createMany({
-        data: defaultStages.map((s) => ({
-          ...s,
-          pipelineId: pipeline.id,
-          tenantId: tenant.id,
-        })),
-      });
-
-      return { user, tenant };
     });
 
-    const tokens = await this.generateTokens(user.id, user.email, tenant.id, user.role);
+    const tokens = await this.generateTokens(
+      user.id,
+      user.email,
+      tenant.id,
+      user.role
+    );
 
     return {
       user: this.sanitizeUser(user),
-      tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+      },
       ...tokens,
     };
   }
