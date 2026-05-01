@@ -61,6 +61,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode: status,
       message,
       errors: errors ?? undefined,
+      details: (exception instanceof HttpException && status === 503) ? exception.getResponse() : undefined,
       requestId,
       timestamp: new Date().toISOString(),
       path: request.url,

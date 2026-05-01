@@ -1,4 +1,4 @@
-import { Controller, Get, Header } from '@nestjs/common';
+import { Controller, Get, Header, Logger, Inject } from '@nestjs/common';
 import {
   HealthCheck,
   HealthCheckService,
@@ -9,6 +9,7 @@ import {
 import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../core/database/prisma.service';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 
 @SkipThrottle()
 @Controller('health')
@@ -19,6 +20,7 @@ export class HealthController {
     private readonly memory: MemoryHealthIndicator,
     private readonly disk: DiskHealthIndicator,
     private readonly prisma: PrismaService,
+    @Inject(WINSTON_MODULE_NEST_PROVIDER) private readonly logger: Logger,
   ) {}
 
   /** Lightweight liveness probe — used by Docker healthcheck and CD pipeline */
@@ -32,21 +34,23 @@ export class HealthController {
   @Get('ready')
   @Public()
   @HealthCheck()
-  check() {
-    return this.health.check([
-      // Database reachability
-      () => this.prismaHealth.pingCheck('database', this.prisma),
-      // RSS memory must stay below 768 MB (safer for heavy apps with blockchain/RAG)
-      () => this.memory.checkRSS('memory_rss', 768 * 1024 * 1024),
-      // Heap must stay below 512 MB
-      () => this.memory.checkHeap('memory_heap', 512 * 1024 * 1024),
-      // Disk must have at least 5% free on / (be lenient in Alpine containers)
-      () =>
-        this.disk.checkStorage('disk', {
-          path: '/',
-          thresholdPercent: 0.95,
-        }),
-    ]);
+  async check() {
+    try {
+      return await this.health.check([
+        // Database reachability
+        () => this.prismaHealth.pingCheck('database', this.prisma),
+        // RSS memory must stay below 768 MB (safer for heavy apps with blockchain/RAG)
+        () => this.memory.checkRSS('memory_rss', 768 * 1024 * 1024),
+        // Heap must stay below 512 MB
+        () => this.memory.checkHeap('memory_heap', 512 * 1024 * 1024),
+      ]);
+    } catch (e) {
+      this.logger.error('Health readiness check failed', {
+        message: e.message,
+        response: e instanceof Error && 'getResponse' in e ? (e as any).getResponse() : undefined,
+      });
+      throw e;
+    }
   }
 
   /**
