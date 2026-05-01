@@ -20,6 +20,21 @@ export class PrismaService
     await this.$disconnect();
   }
 
+  /**
+   * Bypasses tenant enforcement for the duration of the provided function.
+   * Critical for registration, login, and background tasks.
+   */
+  async withoutTenantScope<T>(fn: () => Promise<T>): Promise<T> {
+    return tenantContext.run({ skipTenant: true }, fn);
+  }
+
+  /**
+   * Runs the provided function within a specific tenant context.
+   */
+  async withTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
+    return tenantContext.run({ tenantId }, fn);
+  }
+
   private setupMiddleware() {
     this.$use(async (params, next) => {
       const ctx = tenantContext.getStore();
@@ -42,11 +57,15 @@ export class PrismaService
       ];
 
       if (tenantModels.includes(params.model || '')) {
+        // If no tenant context is set, block the operation
+        // (Prevents accidental data leakage or cross-tenant contamination)
         if (!tenantId) {
-          throw new Error('Tenant context is required for this operation.');
+          throw new Error(
+            `Tenant context is required for model ${params.model} during ${params.action}.`,
+          );
         }
 
-        // Inject tenantId automatically
+        // Inject tenantId automatically into the query arguments
         if (params.action === 'create') {
           params.args.data = {
             ...params.args.data,
@@ -61,7 +80,7 @@ export class PrismaService
           };
         }
 
-        if (params.action === 'update' || params.action === 'delete') {
+        if (params.action === 'update' || params.action === 'updateMany' || params.action === 'delete' || params.action === 'deleteMany') {
           params.args.where = {
             ...params.args.where,
             tenantId,

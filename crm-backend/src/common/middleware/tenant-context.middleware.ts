@@ -14,13 +14,8 @@ import { Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/commo
 import { Request, Response, NextFunction } from 'express';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { AsyncLocalStorage } from 'async_hooks';
-import type { TenantContext, JwtPayload } from '../../shared/types/tenant.types';
-
-export type { TenantContext };
-
-// Singleton AsyncLocalStorage - shared across the entire process
-export const tenantContext = new AsyncLocalStorage<TenantContext>();
+import { tenantContext, TenantContext } from '../../core/database/tenant-context';
+import type { JwtPayload } from '../../shared/types/tenant.types';
 
 @Injectable()
 export class TenantContextMiddleware implements NestMiddleware {
