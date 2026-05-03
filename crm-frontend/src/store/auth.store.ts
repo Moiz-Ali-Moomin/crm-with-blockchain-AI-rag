@@ -61,8 +61,21 @@ export const useAuthStore = create<AuthState>()(
           ? localStorage
           : { getItem: () => null, setItem: () => {}, removeItem: () => {} }
       ),
-      // Persist user profile for instant rendering; auth truth lives in the httpOnly cookie.
-      partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated }),
+      // Persist safe fields for instant UI; sensitive fields (role, email)
+      // are omitted to prevent XSS-based enumeration. Auth truth lives in the
+      // secure httpOnly cookie.
+      partialize: (state) => ({
+        isAuthenticated: state.isAuthenticated,
+        user: state.user
+          ? {
+              id: state.user.id,
+              tenantId: state.user.tenantId,
+              firstName: state.user.firstName,
+              lastName: state.user.lastName,
+              avatar: state.user.avatar,
+            }
+          : null,
+      }),
       onRehydrateStorage: () => (state) => {
         state?._setHasHydrated(true);
       },

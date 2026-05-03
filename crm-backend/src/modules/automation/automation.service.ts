@@ -146,7 +146,7 @@ export class AutomationService {
 
         // Execute actions sequentially
         const actions = (workflow.actions as any[]) ?? [];
-        const actionResults = [];
+        const actionResults: any[] = [];
 
         for (const action of actions) {
           const result = await this.actionExecutor.execute(action, data, tenantId);

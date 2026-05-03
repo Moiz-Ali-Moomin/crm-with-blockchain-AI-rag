@@ -427,7 +427,7 @@ export class BlockchainListenerService
         : new ethers.JsonRpcProvider(rpcUrl);
 
       // ── Replay missed events before subscribing ────────────────────────────
-      const currentBlock = await this.withRpcRetry(chain, () => provider.getBlockNumber());
+      const currentBlock = await this.withRpcRetry<number>(chain, () => provider.getBlockNumber());
       const storedBlock  = await this.loadLastBlock(chain);
       const replayFrom   = storedBlock > 0
         ? Math.max(0, storedBlock - 5)
@@ -527,7 +527,7 @@ export class BlockchainListenerService
       const end = Math.min(start + MAX_LOGS_CHUNK_BLOCKS - 1, toBlock);
 
       try {
-        const logs = await this.withRpcRetry(chain, () =>
+        const logs = await this.withRpcRetry<ethers.Log[]>(chain, () =>
           provider.getLogs({ ...filter, fromBlock: start, toBlock: end }),
         );
 

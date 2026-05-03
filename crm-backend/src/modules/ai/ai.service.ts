@@ -17,6 +17,7 @@ import {
 } from './ai.dto';
 import { AgentService } from '../mcp/agent.service';
 import { ChatMessage } from './providers/llm.interface';
+import { PromptSanitizer } from '../../shared/utils/prompt-sanitizer';
 
 @Injectable()
 export class AiService {
@@ -36,9 +37,10 @@ export class AiService {
   // No per-user lock needed — pgvector query, not an LLM call.
 
   semanticSearch(tenantId: string, dto: SemanticSearchDto) {
+    const sanitizedQuery = PromptSanitizer.sanitize(dto.query);
     return this.vectorSearch.search({
       tenantId,
-      query: dto.query,
+      query: sanitizedQuery,
       entityTypes: dto.entityTypes,
       limit: dto.limit,
       threshold: dto.threshold,
@@ -67,10 +69,11 @@ export class AiService {
   async generateEmailReply(tenantId: string, userId: string, dto: GenerateEmailReplyDto) {
     const release = await this.executor.acquireUserSlot(userId);
     try {
+      const sanitizedInstruction = PromptSanitizer.sanitize(dto.instruction ?? '');
       return await this.copilot.generateEmailReply(
         tenantId,
         dto.communicationId,
-        dto.instruction,
+        sanitizedInstruction,
       );
     } finally {
       await release();
@@ -119,10 +122,12 @@ export class AiService {
     // block guarantees release regardless of outcome.
     const release = await this.executor.acquireUserSlot(userId);
 
+    const sanitizedQuery = PromptSanitizer.sanitize(dto.query);
+
     try {
       if (this.agent && (dto.history.length === 0 || dto.sessionId)) {
         const result = await this.agent.run({
-          query: dto.query,
+          query: sanitizedQuery,
           tenantId,
           userId,
           userRole,
@@ -146,7 +151,7 @@ export class AiService {
       // from the same user.
       return this.rag.query({
         tenantId,
-        query: dto.query,
+        query: sanitizedQuery,
         entityTypes: dto.entityTypes,
         topK: dto.topK,
         threshold: dto.threshold,
@@ -202,6 +207,7 @@ export class AiService {
     }, signal);
   }
 
+
   // ── Deal verification — acquires per-user slot ────────────────────────────
   //
   // Previously called rag.query() directly with NO per-user lock. Fixed:
@@ -235,7 +241,7 @@ Question: Is this deal verified and what is its status?
 
       const ragResult = await this.rag.query({
         tenantId,
-        query: enrichedQuery,
+        query: PromptSanitizer.sanitize(enrichedQuery),
         entityTypes: ['activity', 'communication', 'ticket'],
         topK: 6,
         threshold: 0.65,

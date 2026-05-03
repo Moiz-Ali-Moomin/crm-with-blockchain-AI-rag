@@ -28,7 +28,7 @@ import { EmbeddingJobPayload } from '../../modules/ai/ai.dto';
   // Hard rate cap shared across all pods via Redis: max 20 embedding calls/minute.
   // This is the backstop if multiple worker instances are running.
   limiter: { max: 20, duration: 60_000 },
-})
+} as any)
 export class AiEmbeddingWorker extends WorkerHost {
   private readonly logger = new Logger(AiEmbeddingWorker.name);
 

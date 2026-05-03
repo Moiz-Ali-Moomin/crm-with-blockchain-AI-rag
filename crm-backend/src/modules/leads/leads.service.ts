@@ -194,7 +194,7 @@ export class LeadsService {
         },
       });
 
-      let deal = null;
+      let deal: any = null;
 
       if (dto.createDeal && dto.pipelineId && dto.stageId) {
         deal = await tx.deal.create({

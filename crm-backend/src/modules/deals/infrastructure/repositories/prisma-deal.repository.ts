@@ -144,7 +144,7 @@ function toDealReadModel(
           id:        row.contact.id,
           firstName: row.contact.firstName,
           lastName:  row.contact.lastName,
-          email:     row.contact.email,          // always present — CONTACT_SELECT requires it
+          email:     row.contact.email ?? '',          // always present — CONTACT_SELECT requires it
         }
       : null,
 
