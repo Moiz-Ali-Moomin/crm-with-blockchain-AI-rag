@@ -40,7 +40,7 @@ const { OTLPLogExporter }                = require('@opentelemetry/exporter-logs
 const { PeriodicExportingMetricReader }  = require('@opentelemetry/sdk-metrics');
 const { BatchLogRecordProcessor }        = require('@opentelemetry/sdk-logs');
 const { BatchSpanProcessor }             = require('@opentelemetry/sdk-trace-base');
-const { resourceFromAttributes }         = require('@opentelemetry/resources');
+const { Resource }                       = require('@opentelemetry/resources');
 
 // ─── Endpoint resolution ──────────────────────────────────────────────────────
 // Strip any /v1/xxx suffix so callers can set either the bare base URL or a
@@ -55,7 +55,7 @@ const LOGS_URL    = `${baseUrl}/v1/logs`;
 
 // ─── Resource ─────────────────────────────────────────────────────────────────
 
-const resource = resourceFromAttributes({
+const resource = new Resource({
   'service.name':           process.env.OTEL_SERVICE_NAME || 'crm-api',
   'service.version':        process.env.APP_VERSION       || '1.0.0',
   'service.namespace':      'crm',
