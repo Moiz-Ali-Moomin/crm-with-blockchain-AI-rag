@@ -32,6 +32,8 @@ if (process.env.OTEL_SDK_DISABLED === 'true') {
 
 const { NodeSDK }                        = require('@opentelemetry/sdk-node');
 const { getNodeAutoInstrumentations }    = require('@opentelemetry/auto-instrumentations-node');
+const { PrismaInstrumentation }          = require('@prisma/instrumentation');
+const { MongooseInstrumentation }        = require('@opentelemetry/instrumentation-mongoose');
 const { OTLPTraceExporter }              = require('@opentelemetry/exporter-trace-otlp-http');
 const { OTLPMetricExporter }             = require('@opentelemetry/exporter-metrics-otlp-http');
 const { OTLPLogExporter }                = require('@opentelemetry/exporter-logs-otlp-http');
@@ -63,6 +65,17 @@ const resource = resourceFromAttributes({
 // ─── Instrumentation ──────────────────────────────────────────────────────────
 
 const instrumentations = [
+  new PrismaInstrumentation({
+    // Captures the full SQL statement (parameterised).
+    // Essential for debugging slow queries in Tempo.
+    middleware: true,
+  }),
+
+  new MongooseInstrumentation({
+    // Captures MongoDB queries for AI logging and document storage
+    dbStatementSerializer: (cmd) => JSON.stringify(cmd),
+  }),
+
   getNodeAutoInstrumentations({
     // fs instrumentation generates thousands of spans per request — disable it.
     '@opentelemetry/instrumentation-fs': { enabled: false },

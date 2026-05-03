@@ -17,6 +17,7 @@ import {
 import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
+import { recordError } from '../../observability/tracing';
 import {
   DomainError,
   NotFoundError,
@@ -41,6 +42,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     // Log based on severity
     if (status >= 500) {
+      // Record error on the OTel span for Tempo correlation
+      recordError(exception);
+
       this.logger.error({
         message: `${request.method} ${request.url} → ${status}`,
         error: exception instanceof Error ? exception.message : String(exception),
