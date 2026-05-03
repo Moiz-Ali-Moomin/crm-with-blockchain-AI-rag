@@ -158,26 +158,6 @@ export class AiService {
         history: dto.history as ChatMessage[],
         signal,
       });
-    } catch (err: unknown) {
-      // Normalize Anthropic SDK 429 → HttpException so clients get a clean
-      // 429 response instead of a 500. NEVER fall through to a second LLM
-      // call — that would compound the rate-limit storm.
-      if (err instanceof HttpException) throw err;
-      const isAnthropicRateLimit =
-        err != null &&
-        typeof (err as any)['status'] === 'number' &&
-        (err as any)['status'] === 429;
-      if (isAnthropicRateLimit) {
-        throw new HttpException(
-          {
-            statusCode: 429,
-            error: 'Too Many Requests',
-            message: 'AI provider rate limit reached. Please retry in a moment.',
-          },
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
-      }
-      throw err;
     } finally {
       await release();
     }

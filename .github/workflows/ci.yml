@@ -412,6 +412,13 @@ jobs:
             "${IMAGE_API}:${IMAGE_TAG}" \
             prisma migrate deploy
 
+          docker run --rm \
+            --network smoke_net \
+            -e DATABASE_URL="postgresql://test:test@smoke_postgres:5432/test" \
+            --entrypoint npx \
+            "${IMAGE_API}:${IMAGE_TAG}" \
+            prisma db seed
+
           # ── [5] Start the API container ───────────────────────────────────────
           # Env var audit against env.validation.ts (Zod schema):
           #

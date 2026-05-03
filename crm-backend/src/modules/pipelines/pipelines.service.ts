@@ -65,13 +65,14 @@ export class PipelinesService {
         },
       });
 
-      // Seed default stages
+      // Seed default stages (Idempotent)
       await tx.stage.createMany({
         data: DEFAULT_STAGES.map((s) => ({
           ...s,
           pipelineId: created.id,
           tenantId,
         })),
+        skipDuplicates: true,
       });
 
       return tx.pipeline.findFirst({

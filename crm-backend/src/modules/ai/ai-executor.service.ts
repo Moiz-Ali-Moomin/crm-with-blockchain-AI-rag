@@ -218,6 +218,8 @@ export class AiExecutorService {
         this.lastCallAt = Date.now();
         this.logger.log(`[executor] ← done key=${label} elapsed=${Date.now() - t0}ms`);
         return result;
+      } catch (err) {
+        throw this.normalizeError(err);
       } finally {
         await this.releaseGlobalSlot();
       }
@@ -237,6 +239,63 @@ export class AiExecutorService {
     });
 
     return promise;
+  }
+
+  // ── Error Normalization ──────────────────────────────────────────────────
+
+  private normalizeError(err: unknown): unknown {
+    if (err instanceof HttpException) return err;
+
+    const error = err as any;
+    const status = error.status || error.statusCode;
+
+    // Check for Anthropic / OpenAI SDK error shapes
+    if (typeof status === 'number' && status >= 400 && status < 500) {
+      let message = error.message || 'An error occurred with the AI provider';
+
+      // If the error object has a nested error with a message (common in SDKs)
+      if (error.error?.message) {
+        message = error.error.message;
+      } else if (typeof message === 'string' && message.trim().startsWith('{')) {
+        // Anthropic specific: message is often a JSON string containing the real error
+        try {
+          const parsed = JSON.parse(message);
+          if (parsed.error?.message) {
+            message = parsed.error.message;
+          } else if (parsed.message) {
+            message = parsed.message;
+          }
+        } catch {
+          // Fallback to original message
+        }
+      }
+
+      // Map specific AI errors to descriptive HTTP codes
+      let httpStatus = status;
+      const lowerMsg = message.toLowerCase();
+
+      if (status === 400 && (lowerMsg.includes('credit balance') || lowerMsg.includes('insufficient funds'))) {
+        httpStatus = HttpStatus.PAYMENT_REQUIRED; // 402
+      } else if (status === 401 || status === 403) {
+        // Auth errors with the provider are internal configuration issues
+        this.logger.error(`[executor] AI Provider Authentication Error: ${message}`);
+        return new HttpException(
+          'AI service is misconfigured. Please contact support.',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+
+      return new HttpException(
+        {
+          statusCode: httpStatus,
+          message,
+          error: error.name || 'AI Provider Error',
+        },
+        httpStatus,
+      );
+    }
+
+    return err;
   }
 
   // ── Gap enforcement ───────────────────────────────────────────────────────

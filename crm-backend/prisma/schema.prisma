@@ -435,6 +435,7 @@ model Stage {
   deals       Deal[]
   stageHistory DealStageHistory[]
 
+  @@unique([pipelineId, name]) // Prevents duplicate stages in the same pipeline
   @@index([pipelineId])
   @@index([tenantId])
   @@map("stages")
@@ -507,6 +508,7 @@ model DealStageHistory {
 model Activity {
   id           String       @id @default(uuid())
   tenantId     String
+  externalId   String?      // Idempotency key for seeding/integrations
   type         ActivityType
   entityType   EntityType   // LEAD | CONTACT | COMPANY | DEAL | TICKET
   entityId     String       // ID of the related entity
@@ -525,6 +527,7 @@ model Activity {
   tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdBy    User         @relation(fields: [createdById], references: [id])
 
+  @@unique([tenantId, externalId])
   @@index([tenantId])
   @@index([tenantId, entityType, entityId])  // Critical for timeline queries
   @@index([tenantId, createdById])
@@ -581,7 +584,7 @@ model Communication {
   entityId    String?
   contactId   String?
   sentById    String?
-  externalId  String?                // Twilio SID, SendGrid message ID
+  externalId  String?                // Twilio SID, SendGrid message ID, or Seeding key
   metadata    Json                   @default("{}")
   sentAt      DateTime?
   deliveredAt DateTime?
@@ -595,6 +598,7 @@ model Communication {
   tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contact     Contact?               @relation(fields: [contactId], references: [id])
 
+  @@unique([tenantId, externalId])
   @@index([tenantId])
   @@index([tenantId, channel, createdAt])
   @@index([tenantId, entityType, entityId])
@@ -736,6 +740,7 @@ model Notification {
   id          String   @id @default(uuid())
   tenantId    String
   userId      String
+  externalId  String?  // Idempotency key for seeding/system events
   title       String
   body        String
   type        String   // "deal_moved", "task_overdue", "lead_assigned", etc.
@@ -750,6 +755,7 @@ model Notification {
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([tenantId, userId, externalId])
   @@index([tenantId, userId, isRead])
   @@index([tenantId, userId, createdAt])
   @@map("notifications")

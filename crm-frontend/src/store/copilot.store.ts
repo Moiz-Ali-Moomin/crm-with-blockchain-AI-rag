@@ -206,11 +206,15 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
 
       if (axios.isAxiosError(err)) {
         const status = err.response?.status;
+        const responseData = err.response?.data;
         const isTimeout = err.code === 'ECONNABORTED' || err.message?.includes('timeout');
+
         if (isTimeout) {
-          // Never silently retry on timeout — show a clear message instead.
           content =
             'The AI is taking longer than expected. Please wait a moment and try again — avoid resending while a response is in progress.';
+        } else if (responseData?.message && typeof responseData.message === 'string') {
+          // Priority: Use the descriptive error message from the backend envelope
+          content = responseData.message;
         } else if (status === 429) {
           const retryAfter = err.response?.headers?.['retry-after'];
           const waitSecs = retryAfter ? parseInt(retryAfter, 10) : 60;
