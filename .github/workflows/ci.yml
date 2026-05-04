@@ -415,6 +415,7 @@ jobs:
           docker run --rm \
             --network smoke_net \
             -e DATABASE_URL="postgresql://test:test@smoke_postgres:5432/test" \
+            -e FORCE_SEED=true \
             --entrypoint npx \
             "${IMAGE_API}:${IMAGE_TAG}" \
             prisma db seed
