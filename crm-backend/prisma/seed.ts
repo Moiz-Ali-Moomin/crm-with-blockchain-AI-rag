@@ -242,8 +242,8 @@ async function main() {
   for (const l of leadsRaw) {
     await prisma.lead.upsert({
       where: { id: (await prisma.lead.findFirst({ where: { tenantId: tenant.id, email: l.email } }))?.id || '00000000-0000-0000-0000-000000000000' },
-      update: { ...l },
-      create: { ...l, tenantId: tenant.id, createdById: adminUser.id },
+      update: { ...l, status: l.status as any, source: l.source as any },
+      create: { ...l, status: l.status as any, source: l.source as any, tenantId: tenant.id, createdById: adminUser.id },
     });
   }
   console.log(`✅ Leads: ${leadsRaw.length} upserted`);
@@ -276,9 +276,10 @@ async function main() {
 
     await prisma.deal.upsert({
       where: { id: (await prisma.deal.findFirst({ where: { tenantId: tenant.id, title: d.title } }))?.id || '00000000-0000-0000-0000-000000000000' },
-      update: { ...dealData, stageId: stage!.id },
+      update: { ...dealData, status: dealData.status as any, stageId: stage!.id },
       create: {
         ...dealData,
+        status: dealData.status as any,
         tenantId: tenant.id,
         pipelineId: pipeline.id,
         stageId: stage!.id,

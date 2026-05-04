@@ -5,8 +5,8 @@
   "scripts": {
     "build": "nest build",
     "start": "node -r ./otel.js dist/src/main.js",
-    "start:dev": "nest start --watch",
-    "start:debug": "nest start --debug --watch",
+    "start:dev": "NODE_OPTIONS='-r ./otel.js' nest start --watch",
+    "start:debug": "NODE_OPTIONS='-r ./otel.js' nest start --debug --watch",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
     "lint:fix": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
+    "@appsignal/opentelemetry-instrumentation-bullmq": "^0.8.0",
     "@nestjs/bullmq": "^10.1.1",
     "@nestjs/common": "^10.3.0",
     "@nestjs/config": "^3.1.1",
