@@ -62,6 +62,14 @@ const resource = new Resource({
   'service.version':        process.env.APP_VERSION       || '1.0.0',
   'service.namespace':      'crm',
   'deployment.environment': process.env.NODE_ENV          || 'production',
+  // Unique per running container. Uses the container's hostname (set by Docker
+  // to the short container ID) so you can isolate one instance in Loki/Tempo
+  // when debugging a blue/green slot mid-deploy.
+  'service.instance.id':    process.env.HOSTNAME          || require('os').hostname(),
+  // Blue/green slot identifier. Injected by docker-compose.*.yml as SLOT=green.
+  // Becomes an OTEL resource attribute that flows into Loki structured metadata,
+  // letting you filter logs by deployment slot during cutover validation.
+  'deployment.slot':        process.env.SLOT              || 'unknown',
 });
 
 // ─── Instrumentation ──────────────────────────────────────────────────────────
