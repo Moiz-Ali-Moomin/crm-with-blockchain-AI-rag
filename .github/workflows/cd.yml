@@ -187,6 +187,42 @@ jobs:
               sleep 3
             fi
 
+            # ── [0d] Reconcile Loki config drift ────────────────────────────
+            # Same pattern as otel-collector above. Loki does not hot-reload;
+            # changes to observability/loki/config.yml (e.g. allow_structured_metadata)
+            # require a restart to take effect. Without this check, OTEL logs
+            # silently fail to reach Loki after a config change until someone
+            # manually restarts the container.
+            echo "Checking Loki config drift..."
+            if docker ps --format '{{.Names}}' | grep -q '^crm_loki$'; then
+              docker cp \
+                "$DEPLOY_PATH/observability/loki/config.yml" \
+                crm_loki:/tmp/config.expected.yml 2>/dev/null
+              if docker exec crm_loki \
+                   cmp -s /etc/loki/config.yml /tmp/config.expected.yml 2>/dev/null; then
+                echo "  OK: Loki config in sync"
+              else
+                echo "  config drift detected — restarting Loki"
+                docker compose -f "$DEPLOY_PATH/docker-compose.yml" restart loki
+                for i in $(seq 1 15); do
+                  if docker exec crm_loki \
+                       wget -qO- --timeout=2 http://127.0.0.1:3100/ready 2>&1 | grep -q "ready"; then
+                    echo "  OK: Loki ready after restart (attempt $i/15)"
+                    break
+                  fi
+                  if [ "$i" = "15" ]; then
+                    echo "  WARN: Loki did not report ready in 30s — dumping logs"
+                    docker logs crm_loki --tail 20
+                  fi
+                  sleep 2
+                done
+              fi
+            else
+              echo "  crm_loki not running — starting it"
+              docker compose -f "$DEPLOY_PATH/docker-compose.yml" up -d loki
+              sleep 5
+            fi
+
             # ── [1] Authenticate to GHCR ────────────────────────────────────
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
