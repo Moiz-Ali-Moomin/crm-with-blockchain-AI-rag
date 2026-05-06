@@ -178,6 +178,33 @@ try {
   console.log(`[OTEL] traces  → ${TRACE_URL}`);
   console.log(`[OTEL] metrics → ${METRICS_URL}`);
   console.log(`[OTEL] logs    → ${LOGS_URL}`);
+
+  // ── Pipeline diagnostic boot log ────────────────────────────────────────────
+  // Emitted directly via the OTel Logs API, bypassing Winston entirely.
+  // Purpose: confirm end-to-end pipeline on every container start.
+  //
+  // Query in Grafana Loki to verify:
+  //   {service_name="crm-api"} | json | diagnostic_source = "otel-boot"
+  //
+  // If this log does NOT appear in Loki within 15 seconds of startup:
+  //   1. Check collector logs: docker logs crm_otel_collector --tail=50
+  //   2. Check Loki is ready: curl http://crm_loki:3100/ready
+  //   3. Ensure Loki config has allow_structured_metadata: true and was restarted
+  const { logs: otelLogs, SeverityNumber } = require('@opentelemetry/api-logs');
+  const bootLogger = otelLogs.getLogger('otel-diagnostic', '1.0.0');
+  bootLogger.emit({
+    severityNumber: SeverityNumber.INFO,
+    severityText:   'INFO',
+    body:           '[OTEL BOOT] Pipeline diagnostic — app emitting OTEL-native logs',
+    attributes: {
+      'diagnostic.source':    'otel-boot',
+      'diagnostic.boot_ms':   Date.now(),
+      'diagnostic.log_url':   LOGS_URL,
+      'diagnostic.service':   process.env.OTEL_SERVICE_NAME || 'crm-api',
+    },
+  });
+  console.log('[OTEL] Boot diagnostic log emitted — check Loki in 15s');
+  console.log('[OTEL] Query: {service_name="crm-api"} | json | diagnostic_source = "otel-boot"');
 } catch (err) {
   // A misconfigured or unavailable collector must not crash the application.
   // The app runs without observability rather than failing to boot.
