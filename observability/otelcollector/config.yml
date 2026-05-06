@@ -7,36 +7,99 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
+  # ── Memory safety ────────────────────────────────────────────────────────────
+  # Hard ceiling on resident memory. The spike_limit gives headroom for a burst
+  # before the limiter starts refusing new data. check_interval must be fast
+  # enough to catch spikes before they exceed (limit + spike).
   memory_limiter:
     limit_mib: 256
     spike_limit_mib: 64
     check_interval: 5s
 
+  # ── Trace + Metric batch ─────────────────────────────────────────────────────
+  # Kept short (5 s) because traces are latency-sensitive: you want spans in
+  # Tempo quickly so "trace this request" works in near-real-time in Grafana.
   batch:
     timeout: 5s
     send_batch_size: 512
 
+  # ── Log batch ────────────────────────────────────────────────────────────────
+  # Logs tolerate longer batching than traces. A 10 s window and 1 024 record
+  # batches cut the number of HTTP pushes to Loki by ~4× compared to the trace
+  # batch settings, reducing connection overhead on a single-VPS setup.
+  batch/logs:
+    timeout: 10s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  # ── Loki label promotion ─────────────────────────────────────────────────────
+  # The loki exporter only creates Loki stream labels from attributes named in
+  # the "loki.resource.labels" hint on the resource. Without this processor,
+  # service.name / deployment.environment exist only in structured metadata —
+  # invisible to {service_name="crm-api"} stream selectors in Grafana.
+  #
+  # WHY these four?
+  #   service.name        — primary filter for "show me crm-api logs"
+  #   service.namespace   — separates crm from hypothetical future services
+  #   deployment.environment — separates production from staging/dev
+  #   service.version     — useful during deploys: compare error rates across versions
+  #
+  # Keep this list SHORT. Every label added increases Loki's index cardinality
+  # and memory usage. High-cardinality values (requestId, traceId, tenantId)
+  # must NOT be labels — they go into structured metadata, which is correct.
+  transform/loki_labels:
+    error_mode: ignore
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["loki.resource.labels"], "service.name,service.namespace,deployment.environment,service.version")
+
 exporters:
-  # 🔥 Traces → Tempo
+  # ── Traces → Tempo ───────────────────────────────────────────────────────────
   otlp/tempo:
     endpoint: crm_tempo:4317
     tls:
       insecure: true
 
-  # 📊 Metrics → Prometheus
+  # ── Metrics → Prometheus ─────────────────────────────────────────────────────
   prometheusremotewrite:
     endpoint: http://crm_prometheus:9090/api/v1/write
     resource_to_telemetry_conversion:
       enabled: true
 
-  # 📜 Logs → Loki
+  # ── Logs → Loki ──────────────────────────────────────────────────────────────
   loki:
     endpoint: http://crm_loki:3100/loki/api/v1/push
+
+    # Controls which "well-known" OTel → Loki label mappings are applied
+    # automatically, on top of whatever transform/loki_labels sets.
+    #   job      → maps to service.name  (redundant with our hint but harmless)
+    #   level    → maps to log severity  (important: enables {level="error"} queries)
+    #   exporter → adds "loki-exporter" noise label — disable
+    #   instance → maps to service.instance.id — enable so you can isolate one pod
     default_labels_enabled:
       exporter: false
-      job: true
-      instance: false
+      job: false      # already handled by transform/loki_labels
+      instance: true
       level: true
+
+    # Retry on transient Loki errors (5xx, network timeouts).
+    # With initial_interval=5s and max_elapsed_time=300s the exporter
+    # will keep retrying for up to 5 minutes before giving up on a batch.
+    # This covers Loki restarts, rolling deploys, and momentary OOM kills.
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+    # In-memory queue absorbs bursts while retry is working.
+    # 1 000 batches × ~1 KB average = ~1 MB ceiling (well within our 256 MB limit).
+    # num_consumers = 4 means four concurrent HTTP pushes to Loki at peak.
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 1000
 
 extensions:
   health_check:
@@ -56,13 +119,17 @@ service:
       processors: [memory_limiter, batch]
       exporters: [prometheusremotewrite]
 
+    # Processor order matters:
+    #   1. memory_limiter first — shed load before doing any work
+    #   2. transform/loki_labels — add the hint before batching
+    #   3. batch/logs last — accumulate after enrichment, not before
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
+      processors: [memory_limiter, transform/loki_labels, batch/logs]
       exporters: [loki]
 
   telemetry:
     metrics:
       address: 0.0.0.0:8888
     logs:
-      level: info   # 👈 changed from warn (better visibility)
+      level: info

@@ -42,3 +42,11 @@ limits_config:
   retention_period: 720h
   ingestion_rate_mb: 16
   ingestion_burst_size_mb: 32
+  # Required for OTEL → Loki: the otelcol-contrib loki exporter pushes
+  # non-label OTEL attributes (requestId, tenantId, spanId, etc.) as
+  # structured metadata. Without this flag Loki 3.x rejects those fields
+  # with a 400, causing the exporter to silently drop the log entry.
+  allow_structured_metadata: true
+  # Enables per-stream volume tracking, visible in Grafana as a heatmap.
+  # Useful for identifying noisy services during initial OTEL rollout.
+  volume_enabled: true
